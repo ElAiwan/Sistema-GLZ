@@ -85,6 +85,9 @@ export default function ModuloFacturacion({ registrarHistorial }) {
   // Solo mostramos repuestos con stock > 0
   const disponibles = inventario.filter(i => i.cantidad > 0 && (i.codigo.toLowerCase().includes(busqueda.toLowerCase()) || i.descripcion.toLowerCase().includes(busqueda.toLowerCase())));
 
+  // 🔒 CANDADO 3: Validar si hay error de stock para deshabilitar el botón
+  const hayErrorDeStock = tipoTransaccion === 'Factura' && carrito.some(item => item.cantVenta > item.cantidad);
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 print:hidden h-full">
       {/* PANEL IZQUIERDO: Catálogo Scrollable */}
@@ -122,12 +125,34 @@ export default function ModuloFacturacion({ registrarHistorial }) {
 
         <div className="overflow-y-auto flex-1 border rounded-lg bg-slate-50">
           <table className="w-full text-left border-collapse text-sm">
-            <thead className="sticky top-0 bg-slate-200"><tr className="border-b border-slate-300"><th className="p-3">Producto</th><th className="p-3 w-20">Cant.</th><th className="p-3 w-40">Precio Aplicado</th><th className="p-3 text-right">Subtotal</th><th className="p-3"></th></tr></thead>
+            <thead className="sticky top-0 bg-slate-200"><tr className="border-b border-slate-300"><th className="p-3">Producto</th><th className="p-3 w-24">Cant.</th><th className="p-3 w-40">Precio Aplicado</th><th className="p-3 text-right">Subtotal</th><th className="p-3"></th></tr></thead>
             <tbody>
               {carrito.map(item => (
                 <tr key={item.id} className="border-b bg-white">
                   <td className="p-3"><p className="font-bold">{item.codigo}</p><p className="text-xs text-slate-500">{item.descripcion}</p></td>
-                  <td className="p-3"><input type="number" min="1" max={item.cantidad} value={item.cantVenta} onChange={(e) => setCarrito(carrito.map(i => i.id === item.id ? {...i, cantVenta: Number(e.target.value)} : i))} className="w-full border rounded p-1.5 text-center outline-none" /></td>
+                  <td className="p-3">
+                    <input 
+                      type="number" 
+                      min="1" 
+                      value={item.cantVenta} 
+                      onChange={(e) => {
+                        const nuevaCant = Number(e.target.value);
+                        // 🔒 CANDADO 1: Evitar que suban la cantidad si es Factura
+                        if (tipoTransaccion === 'Factura' && nuevaCant > item.cantidad) {
+                          alert(`❌ Acción denegada: Stock insuficiente.\nSolo hay ${item.cantidad} unidades disponibles de este repuesto.`);
+                          return;
+                        }
+                        setCarrito(carrito.map(i => i.id === item.id ? {...i, cantVenta: nuevaCant} : i));
+                      }} 
+                      className="w-full border rounded p-1.5 text-center outline-none" 
+                    />
+                    {/* ⚠️ CANDADO 2: Advertencia visual para Cotizaciones */}
+                    {item.cantVenta > item.cantidad && (
+                      <div className="text-red-500 text-[10px] font-bold leading-tight mt-1 bg-red-50 p-1 rounded border border-red-100 text-center">
+                        ⚠️ Stock: {item.cantidad || 0}
+                      </div>
+                    )}
+                  </td>
                   <td className="p-3">
                     <select value={item.precioSel} onChange={(e) => setCarrito(carrito.map(i => i.id === item.id ? {...i, precioSel: Number(e.target.value)} : i))} className="w-full border rounded p-1.5 outline-none bg-slate-50 cursor-pointer font-medium">
                       <option value={item.precioVerde}>V: C${item.precioVerde.toLocaleString('en-US')}</option>
@@ -150,8 +175,17 @@ export default function ModuloFacturacion({ registrarHistorial }) {
         </div>
         
         <div className="mt-4 flex justify-end shrink-0">
-          <button onClick={procesar} disabled={carrito.length === 0} className="bg-slate-800 text-white px-8 py-3.5 rounded-xl font-bold flex items-center shadow-lg hover:bg-slate-900 transition-colors disabled:opacity-50">
-            <Printer className="mr-2" size={20} /> {tipoTransaccion === 'Factura' ? 'Procesar Venta e Imprimir' : 'Generar Cotización'}
+          <button 
+            onClick={procesar} 
+            disabled={carrito.length === 0 || hayErrorDeStock} 
+            className={`px-8 py-3.5 rounded-xl font-bold flex items-center shadow-lg transition-colors disabled:opacity-50
+              ${hayErrorDeStock 
+                ? 'bg-slate-400 text-white cursor-not-allowed' 
+                : 'bg-slate-800 text-white hover:bg-slate-900'
+              }`}
+          >
+            <Printer className="mr-2" size={20} /> 
+            {hayErrorDeStock ? '⚠️ Corrige el stock para facturar' : (tipoTransaccion === 'Factura' ? 'Procesar Venta e Imprimir' : 'Generar Cotización')}
           </button>
         </div>
       </div>
