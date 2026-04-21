@@ -5,7 +5,7 @@ import { Trash2, Search, Edit2, Check, X, MapPin } from 'lucide-react';
 
 export default function ModuloInventario({ registrarHistorial, rol }) {
   const [repuestos, setRepuestos] = useState([]);
-  const [nuevoRepuesto, setNuevoRepuesto] = useState({ codigo: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', localidad: 'Managua' });
+  const [nuevoRepuesto, setNuevoRepuesto] = useState({ codigo: '', alternateCode: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', localidad: 'Managua' });
   const [busqueda, setBusqueda] = useState('');
   const [filtroBodega, setFiltroBodega] = useState('Todas');
   const [editandoId, setEditandoId] = useState(null);
@@ -15,38 +15,87 @@ export default function ModuloInventario({ registrarHistorial, rol }) {
     const snap = await getDocs(collection(db, "repuestos"));
     setRepuestos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   };
-  useEffect(() => { obtenerRepuestos(); }, []);
+  useEffect(() => {
+    let activo = true;
+    getDocs(collection(db, "repuestos"))
+      .then((snap) => {
+        if (!activo) return;
+        setRepuestos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      })
+      .catch((error) => {
+        console.error('Error cargando inventario:', error);
+      });
+
+    return () => { activo = false; };
+  }, []);
 
   const guardarRepuesto = async (e) => {
     e.preventDefault();
-    await addDoc(collection(db, "repuestos"), {
-      ...nuevoRepuesto, costo: Number(nuevoRepuesto.costo), precioVerde: Number(nuevoRepuesto.precioVerde), 
-      precioAmarillo: Number(nuevoRepuesto.precioAmarillo), precioRojo: Number(nuevoRepuesto.precioRojo), 
-      cantidad: Number(nuevoRepuesto.cantidad)
-    });
-    await registrarHistorial("Inventario", `Ingresó: ${nuevoRepuesto.codigo} - ${nuevoRepuesto.cantidad} und. en ${nuevoRepuesto.localidad}`);
-    setNuevoRepuesto({ codigo: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', localidad: 'Managua' });
-    obtenerRepuestos(); 
+    if (rol !== 'admin') {
+      alert('⚠️ Solo un administrador puede agregar repuestos.');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "repuestos"), {
+        ...nuevoRepuesto,
+        alternateCode: (nuevoRepuesto.alternateCode || '').trim(),
+        costo: Number(nuevoRepuesto.costo), precioVerde: Number(nuevoRepuesto.precioVerde), 
+        precioAmarillo: Number(nuevoRepuesto.precioAmarillo), precioRojo: Number(nuevoRepuesto.precioRojo), 
+        cantidad: Number(nuevoRepuesto.cantidad)
+      });
+      await registrarHistorial("Inventario", `Ingresó: ${nuevoRepuesto.codigo} - ${nuevoRepuesto.cantidad} und. en ${nuevoRepuesto.localidad}`);
+      setNuevoRepuesto({ codigo: '', alternateCode: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', localidad: 'Managua' });
+      await obtenerRepuestos();
+    } catch (error) {
+      alert('❌ No se pudo guardar el repuesto. Intenta de nuevo.');
+      console.error('Error guardando repuesto:', error);
+    }
   };
 
   const eliminarRepuesto = async (item) => {
-    if (window.confirm("¿Seguro que deseas eliminarlo?")) {
+    if (rol !== 'admin') {
+      alert('⚠️ Solo un administrador puede eliminar repuestos.');
+      return;
+    }
+    if (!window.confirm("¿Seguro que deseas eliminarlo?")) return;
+
+    try {
       await deleteDoc(doc(db, "repuestos", item.id)); 
       await registrarHistorial("Inventario", `Eliminó repuesto: ${item.codigo}`);
-      obtenerRepuestos();
+      await obtenerRepuestos();
+    } catch (error) {
+      alert('❌ No se pudo eliminar el repuesto.');
+      console.error('Error eliminando repuesto:', error);
     }
   };
 
   const guardarCantidad = async (item) => {
-    await updateDoc(doc(db, "repuestos", item.id), { cantidad: Number(cantidadEditada) });
-    await registrarHistorial("Inventario", `Actualizó stock de ${item.codigo} a ${cantidadEditada} und.`);
-    setEditandoId(null); obtenerRepuestos();
+    if (rol !== 'admin') {
+      alert('⚠️ Solo un administrador puede ajustar stock.');
+      return;
+    }
+
+    const cantidadNormalizada = Math.max(0, Number(cantidadEditada) || 0);
+    try {
+      await updateDoc(doc(db, "repuestos", item.id), { cantidad: cantidadNormalizada });
+      await registrarHistorial("Inventario", `Actualizó stock de ${item.codigo} a ${cantidadNormalizada} und.`);
+      setEditandoId(null);
+      await obtenerRepuestos();
+    } catch (error) {
+      alert('❌ No se pudo actualizar el stock.');
+      console.error('Error actualizando stock:', error);
+    }
   };
 
   const formatear = (num) => Number(num).toLocaleString('en-US', { minimumFractionDigits: 2 });
   
   const filtrados = repuestos.filter(item => 
-    (item.codigo.toLowerCase().includes(busqueda.toLowerCase()) || item.descripcion.toLowerCase().includes(busqueda.toLowerCase())) &&
+    (
+      item.codigo.toLowerCase().includes(busqueda.toLowerCase()) ||
+      item.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
+      (item.alternateCode || '').toLowerCase().includes(busqueda.toLowerCase())
+    ) &&
     (filtroBodega === 'Todas' || item.localidad === filtroBodega)
   );
 
@@ -65,7 +114,16 @@ export default function ModuloInventario({ registrarHistorial, rol }) {
       {rol === 'admin' && (
         <form onSubmit={guardarRepuesto} className="mb-8 bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-            <div><label className="block text-xs font-bold text-slate-500 mb-1">Código</label><input required value={nuevoRepuesto.codigo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, codigo: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Código</label>
+                <input required value={nuevoRepuesto.codigo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, codigo: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">Código Alterno</label>
+                <input value={nuevoRepuesto.alternateCode} onChange={e => setNuevoRepuesto({...nuevoRepuesto, alternateCode: e.target.value})} placeholder="Opcional" className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" />
+              </div>
+            </div>
             <div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Descripción</label><input required value={nuevoRepuesto.descripcion} onChange={e => setNuevoRepuesto({...nuevoRepuesto, descripcion: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
             <div>
               <label className="block text-xs font-bold text-slate-500 mb-1">Bodega Destino</label>
@@ -107,7 +165,10 @@ export default function ModuloInventario({ registrarHistorial, rol }) {
           <tbody>
             {filtrados.map((item) => (
               <tr key={item.id} className="border-b hover:bg-slate-50">
-                <td className="p-3 font-bold text-slate-700">{item.codigo}</td>
+                <td className="p-3">
+                  <p className="font-bold text-slate-700">{item.codigo}</p>
+                  {item.alternateCode && <p className="text-[11px] font-semibold text-slate-400">Alt: {item.alternateCode}</p>}
+                </td>
                 <td className="p-3 text-slate-600">{item.descripcion}</td>
                 <td className="p-3 text-center">
                   {editandoId === item.id ? (

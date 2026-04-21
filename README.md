@@ -39,3 +39,53 @@ Para correr este proyecto en un entorno de desarrollo local:
 * Backend & BaaS: Firebase Cloud Firestore (Base de datos NoSQL) y Firebase Authentication.
 
 * Estructura: Modularizada por componentes de negocio para alta mantenibilidad y escalabilidad.
+
+## 🔒 Recomendación de Reglas Firestore (Producción)
+
+Este repositorio ahora incluye archivos base de reglas:
+
+* `firebase.json`
+* `firestore.rules`
+* `firestore.indexes.json`
+
+Para publicar reglas:
+
+```bash
+firebase deploy --only firestore:rules,firestore:indexes
+```
+
+Para que la seguridad no dependa solo del frontend, se recomienda aplicar reglas del lado servidor que:
+
+* permitan leer/escribir únicamente a usuarios autenticados;
+* separen permisos por rol (`admin`, `vendedor`) desde `/roles/{email}`;
+* validen que solo `admin` pueda borrar/ajustar inventario y ver historial sensible;
+* permitan crear facturas solo con campos esperados (evitar payloads arbitrarios).
+
+Ejemplo base (ajustar a su proyecto real):
+
+```txt
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /roles/{userEmail} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /repuestos/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn(); // endurecer por rol admin en producción
+    }
+
+    match /facturas/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if false;
+    }
+  }
+}
+```

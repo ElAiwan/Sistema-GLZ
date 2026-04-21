@@ -14,7 +14,19 @@ export default function ModuloCRM({ registrarHistorial, rol }) {
     const snap = await getDocs(collection(db, "clientes"));
     setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   };
-  useEffect(() => { obtener(); }, []);
+  useEffect(() => {
+    let activo = true;
+    getDocs(collection(db, "clientes"))
+      .then((snap) => {
+        if (!activo) return;
+        setClientes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      })
+      .catch((error) => {
+        console.error('Error cargando clientes:', error);
+      });
+
+    return () => { activo = false; };
+  }, []);
 
   const formatoTelefono = (valor) => {
     let num = valor.replace(/\D/g, '');
@@ -26,24 +38,44 @@ export default function ModuloCRM({ registrarHistorial, rol }) {
 
   const guardar = async (e) => {
     e.preventDefault();
-    await addDoc(collection(db, "clientes"), nuevo);
-    await registrarHistorial("CRM", `Registró al cliente: ${nuevo.nombres} ${nuevo.apellidos}`);
-    setNuevo({ nombres: '', apellidos: '', empresa: '', telefono: '', correo: '', ruc: '' });
-    obtener();
+    try {
+      await addDoc(collection(db, "clientes"), nuevo);
+      await registrarHistorial("CRM", `Registró al cliente: ${nuevo.nombres} ${nuevo.apellidos}`);
+      setNuevo({ nombres: '', apellidos: '', empresa: '', telefono: '', correo: '', ruc: '' });
+      await obtener();
+    } catch (error) {
+      alert('❌ No se pudo guardar el cliente.');
+      console.error('Error guardando cliente:', error);
+    }
   };
 
   const eliminar = async (item) => {
-    if (window.confirm("¿Eliminar cliente?")) {
+    if (rol !== 'admin') {
+      alert('⚠️ Solo un administrador puede eliminar clientes.');
+      return;
+    }
+    if (!window.confirm("¿Eliminar cliente?")) return;
+
+    try {
       await deleteDoc(doc(db, "clientes", item.id));
       await registrarHistorial("CRM", `Eliminó al cliente: ${item.nombres}`);
-      obtener();
+      await obtener();
+    } catch (error) {
+      alert('❌ No se pudo eliminar el cliente.');
+      console.error('Error eliminando cliente:', error);
     }
   };
 
   const guardarEdicion = async (id) => {
-    await updateDoc(doc(db, "clientes", id), editado); 
-    await registrarHistorial("CRM", `Actualizó cliente: ${editado.nombres}`);
-    setEditandoId(null); obtener(); 
+    try {
+      await updateDoc(doc(db, "clientes", id), editado); 
+      await registrarHistorial("CRM", `Actualizó cliente: ${editado.nombres}`);
+      setEditandoId(null);
+      await obtener();
+    } catch (error) {
+      alert('❌ No se pudo guardar la edición del cliente.');
+      console.error('Error actualizando cliente:', error);
+    }
   };
 
   const filtrados = clientes.filter(c => 

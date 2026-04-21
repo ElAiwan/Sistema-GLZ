@@ -52,6 +52,9 @@ const normalizarDocumentoParaImpresion = (factura) => {
       return {
         id: item?.id || `${factura?.id || 'doc'}-item-${index}`,
         codigo: item?.codigo || item?.cod || '',
+        alternateCode: item?.alternateCode || '',
+        usarCodigoAlterno: Boolean(item?.usarCodigoAlterno),
+        codigoImpresion: item?.codigoImpresion || '',
         descripcion: item?.desc || item?.descripcion || 'Sin descripción',
         cantVenta: cantidad,
         precioSel: precio,

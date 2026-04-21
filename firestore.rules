@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function roleDocPath() {
+      return /databases/$(database)/documents/roles/$(request.auth.token.email);
+    }
+
+    function hasRoleDoc() {
+      return signedIn() && exists(roleDocPath());
+    }
+
+    function roleValue() {
+      return hasRoleDoc() ? get(roleDocPath()).data.rol : null;
+    }
+
+    function isAdmin() {
+      return roleValue() == "admin";
+    }
+
+    function canOperate() {
+      return roleValue() in ["admin", "vendedor"];
+    }
+
+    match /roles/{userEmail} {
+      allow read: if signedIn() && userEmail == request.auth.token.email;
+      allow write: if false;
+    }
+
+    match /clientes/{id} {
+      allow read: if canOperate();
+      allow create, update: if canOperate();
+      allow delete: if isAdmin();
+    }
+
+    match /repuestos/{id} {
+      allow read: if canOperate();
+      allow create, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        || (
+          canOperate()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["cantidad"])
+          && request.resource.data.cantidad is number
+          && request.resource.data.cantidad >= 0
+          && request.resource.data.cantidad <= resource.data.cantidad
+        );
+    }
+
+    match /facturas/{id} {
+      allow read: if canOperate();
+
+      allow create: if canOperate()
+        && request.resource.data.cliente is string
+        && request.resource.data.tipo is string
+        && request.resource.data.fecha is string
+        && request.resource.data.total is number
+        && request.resource.data.formaPago is string
+        && request.resource.data.items is list;
+
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "estadoPago",
+          "totalPagado",
+          "saldoPendiente",
+          "historialAbonos",
+          "historialPagos",
+          "abonoInicial"
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /sistema/{id} {
+      allow read: if canOperate();
+
+      allow create: if canOperate()
+        && id == "secuencia"
+        && request.resource.data.keys().hasOnly(["siguiente"])
+        && request.resource.data.siguiente is number
+        && request.resource.data.siguiente >= 1;
+
+      allow update: if canOperate()
+        && id == "secuencia"
+        && request.resource.data.keys().hasOnly(["siguiente"])
+        && request.resource.data.siguiente is number
+        && request.resource.data.siguiente == resource.data.siguiente + 1;
+
+      allow delete: if false;
+    }
+
+    match /historial/{id} {
+      allow read: if isAdmin();
+      allow create: if canOperate();
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -12,7 +12,7 @@ export default function Login() {
     e.preventDefault();
     try {
       await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
+    } catch {
       setError('Credenciales incorrectas o sesión expirada.');
     }
   };

@@ -5,7 +5,7 @@ const normalizarNumero = (valor) => {
 };
 
 const formatearMonto = (valor) =>
-  normalizarNumero(valor).toLocaleString('en-US', { minimumFractionDigits: 2 });
+  `C$ ${normalizarNumero(valor).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const formatearCantidad = (valor) => {
   const cantidad = normalizarNumero(valor);
@@ -22,10 +22,17 @@ const normalizarItems = (items) => {
     const subtotal = item?.subtotal != null
       ? normalizarNumero(item.subtotal)
       : normalizarNumero(cantidad * precio);
+    const codigoAlterno = (item?.alternateCode || '').trim();
+    const usarAlterno = Boolean(
+      item?.usarCodigoAlterno ||
+      item?.preferenciaCodigo === 'alterno' ||
+      item?.codigoSeleccionado === 'alterno'
+    );
+    const codigoElegido = item?.codigoImpresion || (usarAlterno && codigoAlterno ? codigoAlterno : (item?.codigo || item?.cod || ''));
 
     return {
       id: item?.id || `${item?.codigo || 'item'}-${index}`,
-      codigo: item?.codigo || item?.cod || '',
+      codigo: codigoElegido,
       descripcion: item?.descripcion || item?.desc || 'Sin descripción',
       cantidad,
       precio,
@@ -62,6 +69,9 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
   const dia = String(fecha.getDate()).padStart(2, '0');
   const mes = String(fecha.getMonth() + 1).padStart(2, '0');
   const anio = String(fecha.getFullYear());
+  const fechaVencimiento = new Date(fecha);
+  fechaVencimiento.setDate(fechaVencimiento.getDate() + 1);
+  const fechaVencimientoTexto = fechaVencimiento.toLocaleDateString('es-NI');
 
   return (
     <div
@@ -116,6 +126,13 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
 
       <div className="absolute text-right font-bold" style={{ top: '20.0cm', left: '13.4cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
       <div className="absolute text-right font-black text-sm" style={{ top: '21.2cm', left: '13.5cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
+
+      <div className="absolute whitespace-nowrap" style={{ top: '20.55cm', left: '6.3cm', width: '3.5cm' }}>
+        {fechaVencimientoTexto}
+      </div>
+      <div className="absolute whitespace-nowrap" style={{ top: '19.8cm', left: '4.4cm', width: '4cm' }}>
+        AZelaya
+      </div>
     </div>
   );
 }
