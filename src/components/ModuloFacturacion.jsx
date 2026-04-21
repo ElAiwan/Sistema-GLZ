@@ -2,6 +2,21 @@ import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, updateDoc, doc, getDoc, setDoc, addDoc } from 'firebase/firestore';
 import { Search, Trash2, Printer } from 'lucide-react';
+import PlantillaDocumentoComercial from './PlantillaDocumentoComercial';
+
+const NOTAS_SUGERIDAS = [
+  'Entrega Inmediata',
+  'Crédito a 15 días',
+  'Crédito a 30 días',
+  'Sujeto a disponibilidad',
+  'Entrega parcial'
+];
+
+const normalizarMoneda = (valor) => {
+  const numero = Number(valor);
+  if (Number.isNaN(numero)) return NaN;
+  return Math.round((numero + Number.EPSILON) * 100) / 100;
+};
 
 export default function ModuloFacturacion({ registrarHistorial }) {
   const [inventario, setInventario] = useState([]);
@@ -15,6 +30,7 @@ export default function ModuloFacturacion({ registrarHistorial }) {
   const [ruc, setRuc] = useState('');
   const [notas, setNotas] = useState('Entrega Inmediata');
   const [formaPago, setFormaPago] = useState('Efectivo');
+  const [abonoInicial, setAbonoInicial] = useState('0');
   const [carrito, setCarrito] = useState([]);
   const [numDoc, setNumDoc] = useState(0);
 
@@ -52,21 +68,69 @@ export default function ModuloFacturacion({ registrarHistorial }) {
     setCarrito([...carrito, { ...prod, cantVenta: 1, precioSel: prod.precioVerde }]);
   };
 
-  const total = carrito.reduce((sum, i) => sum + (i.cantVenta * i.precioSel), 0);
+  const total = normalizarMoneda(carrito.reduce((sum, i) => sum + (i.cantVenta * i.precioSel), 0));
   const numFormateado = String(numDoc).padStart(5, '0');
+  const abonoInicialNum = formaPago === 'Credito' ? normalizarMoneda(abonoInicial === '' ? 0 : abonoInicial) : 0;
+  const hayErrorAbono = formaPago === 'Credito' && (
+    Number.isNaN(abonoInicialNum) || abonoInicialNum < 0 || abonoInicialNum > total
+  );
+  const saldoPendientePreview = formaPago === 'Credito' && !Number.isNaN(abonoInicialNum)
+    ? normalizarMoneda(Math.max(0, total - abonoInicialNum))
+    : 0;
 
   const procesar = async () => {
     const nombreFinal = clienteStr || 'Cliente Mostrador';
+    const fechaDocumento = new Date().toISOString();
+    const totalDocumento = normalizarMoneda(total);
+    const esCredito = formaPago === 'Credito';
+    let abonoInicialCalculado = 0;
+
+    if (esCredito) {
+      const valorAbono = abonoInicial === '' ? 0 : Number(abonoInicial);
+      if (Number.isNaN(valorAbono) || valorAbono < 0) {
+        alert('⚠️ El abono inicial debe ser un número válido mayor o igual a 0.');
+        return;
+      }
+
+      abonoInicialCalculado = normalizarMoneda(valorAbono);
+      if (abonoInicialCalculado > totalDocumento) {
+        alert('⚠️ El abono inicial no puede ser mayor al total del documento.');
+        return;
+      }
+    }
+
+    const totalPagado = esCredito ? abonoInicialCalculado : totalDocumento;
+    const saldoPendiente = esCredito ? normalizarMoneda(totalDocumento - abonoInicialCalculado) : 0;
+    const estadoPago = esCredito
+      ? (saldoPendiente === 0 ? 'Saldado' : 'Pendiente')
+      : 'Pagado';
+    const historialAbonos = esCredito && abonoInicialCalculado > 0
+      ? [{ fecha: fechaDocumento, monto: abonoInicialCalculado, tipo: 'Abono Inicial', nota: 'Registrado al emitir el documento' }]
+      : [];
     
     await addDoc(collection(db, "facturas"), {
       cliente: nombreFinal,
+      empresa: empresa || '',
       telefono: telefono,
+      ruc: ruc || '',
+      notas: notas || '',
+      numeroDocumento: numFormateado,
       tipo: tipoTransaccion,
-      total: total,
+      total: totalDocumento,
       formaPago: formaPago,
-      estadoPago: formaPago === 'Credito' ? 'Pendiente' : 'Pagado',
-      fecha: new Date().toISOString(),
-      items: carrito.map(i => ({ desc: i.descripcion, cant: i.cantVenta }))
+      estadoPago: estadoPago,
+      abonoInicial: esCredito ? abonoInicialCalculado : 0,
+      totalPagado: totalPagado,
+      saldoPendiente: saldoPendiente,
+      historialAbonos: historialAbonos,
+      fecha: fechaDocumento,
+      items: carrito.map(i => ({
+        codigo: i.codigo || '',
+        desc: i.descripcion,
+        cant: i.cantVenta,
+        precio: normalizarMoneda(i.precioSel),
+        subtotal: normalizarMoneda(i.cantVenta * i.precioSel)
+      }))
     });
 
     if (tipoTransaccion === 'Factura') {
@@ -75,15 +139,34 @@ export default function ModuloFacturacion({ registrarHistorial }) {
       }
     }
     
-    await registrarHistorial(tipoTransaccion, `${tipoTransaccion} #${numFormateado} a ${nombreFinal} por C$${total.toLocaleString('en-US')}`);
+    await registrarHistorial(tipoTransaccion, `${tipoTransaccion} #${numFormateado} a ${nombreFinal} por C$${totalDocumento.toLocaleString('en-US')}`);
     window.print();
     await updateDoc(doc(db, "sistema", "secuencia"), { siguiente: numDoc + 1 });
-    setCarrito([]); setClienteStr(''); setEmpresa(''); setTelefono(''); setRuc('');
+    setCarrito([]); setClienteStr(''); setEmpresa(''); setTelefono(''); setRuc(''); setAbonoInicial('0');
   };
 
   const disponibles = inventario.filter(i => i.cantidad > 0 && (i.codigo.toLowerCase().includes(busqueda.toLowerCase()) || i.descripcion.toLowerCase().includes(busqueda.toLowerCase())));
 
   const hayErrorDeStock = tipoTransaccion === 'Factura' && carrito.some(item => item.cantVenta > item.cantidad);
+  const documentoParaImpresion = {
+    tipo: tipoTransaccion,
+    numeroDocumento: numFormateado,
+    fecha: new Date().toISOString(),
+    formaPago,
+    cliente: clienteStr || 'Cliente Mostrador',
+    telefono,
+    ruc,
+    notas,
+    total,
+    items: carrito.map((item) => ({
+      id: item.id,
+      codigo: item.codigo,
+      descripcion: item.descripcion,
+      cantVenta: item.cantVenta,
+      precioSel: item.precioSel,
+      subtotal: normalizarMoneda(item.cantVenta * item.precioSel)
+    }))
+  };
 
   return (
     <>
@@ -117,7 +200,27 @@ export default function ModuloFacturacion({ registrarHistorial }) {
             <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Empresa</label><input type="text" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500" value={empresa} onChange={e => setEmpresa(e.target.value)} placeholder="Ej: Transportes S.A." /></div>
             <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Teléfono</label><input type="text" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500 font-medium" value={telefono} onChange={e => setTelefono(formatoTelefono(e.target.value))} placeholder="+505 XXXX-XXXX" /></div>
             <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">RUC</label><input type="text" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500 uppercase" value={ruc} onChange={e => setRuc(e.target.value)} placeholder="Ej: 0011402031003K" /></div>
-            <div className="col-span-4"><label className="block text-xs font-bold text-slate-500 mb-1">Notas del Documento</label><input type="text" list="notas-list" className="w-full border p-2.5 rounded-lg bg-green-50 text-green-800 outline-none" value={notas} onChange={e => setNotas(e.target.value)} placeholder="Ej: Entrega Inmediata" /><datalist id="notas-list"><option value="Entrega Inmediata"/><option value="Crédito a 15 días"/></datalist></div>
+            <div className="col-span-4">
+              <label className="block text-xs font-bold text-slate-500 mb-1">Notas del Documento</label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <select
+                  value={NOTAS_SUGERIDAS.includes(notas) ? notas : ''}
+                  onChange={(e) => e.target.value && setNotas(e.target.value)}
+                  className="border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500 text-sm font-medium text-slate-700"
+                >
+                  <option value="">Sugerencias rápidas...</option>
+                  {NOTAS_SUGERIDAS.map((nota) => <option key={nota} value={nota}>{nota}</option>)}
+                </select>
+                <input
+                  type="text"
+                  className="md:col-span-2 border p-2.5 rounded-lg bg-green-50 text-green-800 outline-none focus:border-emerald-500"
+                  value={notas}
+                  onChange={e => setNotas(e.target.value)}
+                  placeholder="Escribe una nota personalizada..."
+                />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">Selecciona una sugerencia o escribe texto libre.</p>
+            </div>
           </div>
 
           <div className="overflow-y-auto flex-1 border rounded-lg bg-slate-50">
@@ -164,67 +267,64 @@ export default function ModuloFacturacion({ registrarHistorial }) {
             </table>
           </div>
           
-          <div className="flex justify-between items-center mt-4 shrink-0 bg-slate-100 p-4 rounded-xl border border-slate-200">
-            <div><label className="text-xs font-bold text-slate-500 mr-2 uppercase">Pago:</label><select className="border border-slate-300 p-2 rounded-lg bg-white outline-none font-bold text-slate-700" value={formaPago} onChange={e => setFormaPago(e.target.value)}><option>Efectivo</option><option>Contado</option><option>Credito</option><option>Transferencia</option></select></div>
-            <div className="text-right flex items-center"><span className="text-sm font-bold text-slate-500 mr-4 uppercase">Total Documento:</span><span className="text-3xl font-black text-emerald-600">C$ {total.toLocaleString('en-US', {minimumFractionDigits:2})}</span></div>
+          <div className="mt-4 shrink-0 bg-slate-100 p-4 rounded-xl border border-slate-200">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 mr-2 uppercase">Pago:</label>
+                  <select className="border border-slate-300 p-2 rounded-lg bg-white outline-none font-bold text-slate-700" value={formaPago} onChange={e => setFormaPago(e.target.value)}>
+                    <option>Efectivo</option><option>Contado</option><option>Credito</option><option>Transferencia</option>
+                  </select>
+                </div>
+
+                {formaPago === 'Credito' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Abono Inicial (C$)</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={abonoInicial}
+                      onChange={(e) => {
+                        const valor = e.target.value.replace(',', '.');
+                        if (/^\d*(\.\d{0,2})?$/.test(valor) || valor === '') setAbonoInicial(valor);
+                      }}
+                      className={`border p-2 rounded-lg bg-white outline-none font-bold text-slate-700 w-48 ${hayErrorAbono ? 'border-red-400' : 'border-slate-300 focus:border-emerald-500'}`}
+                      placeholder="0.00"
+                    />
+                    {hayErrorAbono ? (
+                      <p className="text-[11px] text-red-600 font-semibold mt-1">El abono inicial debe estar entre C$ 0.00 y C$ {total.toLocaleString('en-US', { minimumFractionDigits: 2 })}.</p>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 font-medium mt-1">Saldo pendiente estimado: C$ {saldoPendientePreview.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="text-right flex items-center">
+                <span className="text-sm font-bold text-slate-500 mr-4 uppercase">Total Documento:</span>
+                <span className="text-3xl font-black text-emerald-600">C$ {total.toLocaleString('en-US', {minimumFractionDigits:2})}</span>
+              </div>
+            </div>
           </div>
           
           <div className="mt-4 flex justify-end shrink-0">
             <button 
               onClick={procesar} 
-              disabled={carrito.length === 0 || hayErrorDeStock} 
+              disabled={carrito.length === 0 || hayErrorDeStock || hayErrorAbono} 
               className={`px-8 py-3.5 rounded-xl font-bold flex items-center shadow-lg transition-colors disabled:opacity-50
-                ${hayErrorDeStock 
+                ${(hayErrorDeStock || hayErrorAbono)
                   ? 'bg-slate-400 text-white cursor-not-allowed' 
                   : 'bg-slate-800 text-white hover:bg-slate-900'
                 }`}
             >
               <Printer className="mr-2" size={20} /> 
-              {hayErrorDeStock ? '⚠️ Corrige el stock para facturar' : (tipoTransaccion === 'Factura' ? 'Procesar Venta e Imprimir' : 'Generar Cotización')}
+              {hayErrorDeStock ? '⚠️ Corrige el stock para facturar' : (hayErrorAbono ? '⚠️ Corrige el abono inicial' : (tipoTransaccion === 'Factura' ? 'Procesar Venta e Imprimir' : 'Generar Cotización'))}
             </button>
           </div>
         </div>
       </div>
 
-      {/* VISTA DE IMPRESORA: Solo visible al imprimir (hidden print:block) */}
-      <div className="hidden print:block absolute top-0 left-0 w-[21.59cm] h-[27.94cm] bg-white text-black text-xs font-mono z-50">
-        
-        {/* Forzamos a la impresora a quitar los márgenes por defecto */}
-        <style>{`@media print { @page { margin: 0; size: letter; } }`}</style>
-
-        {/* --- BLOQUE SUPERIOR DERECHO --- */}
-        {tipoTransaccion === 'Cotización' && (
-          <div className="absolute font-bold text-lg" style={{ top: '4.2cm', left: '16.5cm' }}>{numFormateado}</div>
-        )}
-        <div className="absolute" style={{ top: '5.2cm', left: '16.0cm' }}>{new Date().toLocaleDateString('es-NI')}</div>
-        
-        {/* Checkbox Contado/Credito */}
-        {formaPago !== 'Credito' && <div className="absolute font-bold text-lg" style={{ top: '6.7cm', left: '14.2cm' }}>X</div>}
-        {formaPago === 'Credito' && <div className="absolute font-bold text-lg" style={{ top: '6.7cm', left: '17.8cm' }}>X</div>}
-
-        {/* --- DATOS DEL CLIENTE --- */}
-        <div className="absolute font-bold uppercase" style={{ top: '7.2cm', left: '4.2cm' }}>{clienteStr}</div>
-        <div className="absolute" style={{ top: '7.8cm', left: '4.2cm' }}>{telefono}</div>
-        <div className="absolute uppercase" style={{ top: '8.4cm', left: '4.2cm' }}>{ruc}</div>
-        <div className="absolute uppercase" style={{ top: '9.0cm', left: '4.2cm' }}>{notas}</div>
-
-        {/* --- TABLA DE PRODUCTOS --- */}
-        <div className="absolute w-full" style={{ top: '11.5cm', left: '0' }}>
-          {carrito.map((item, index) => (
-            <div key={index} className="relative w-full mb-2 h-[0.7cm]">
-              <div className="absolute" style={{ left: '1.2cm', width: '3cm' }}>{item.codigo}</div>
-              <div className="absolute overflow-hidden" style={{ left: '4.5cm', width: '7.5cm', whiteSpace: 'nowrap' }}>{item.descripcion}</div>
-              <div className="absolute text-center" style={{ left: '12.5cm', width: '1.5cm' }}>{item.cantVenta}</div>
-              <div className="absolute text-right" style={{ left: '14.5cm', width: '2.5cm' }}>{item.precioSel.toLocaleString('en-US', {minimumFractionDigits:2})}</div>
-              <div className="absolute text-right" style={{ left: '17.8cm', width: '2.5cm' }}>{(item.cantVenta * item.precioSel).toLocaleString('en-US', {minimumFractionDigits:2})}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* --- PIE DE PÁGINA (TOTALES) --- */}
-        <div className="absolute text-right font-bold" style={{ top: '22.2cm', left: '17.8cm', width: '2.5cm' }}>{total.toLocaleString('en-US', {minimumFractionDigits:2})}</div>
-        <div className="absolute text-right font-black text-sm" style={{ top: '22.8cm', left: '17.8cm', width: '2.5cm' }}>{total.toLocaleString('en-US', {minimumFractionDigits:2})}</div>
-      </div>
+      <PlantillaDocumentoComercial documento={documentoParaImpresion} soloImpresion />
     </>
   );
 }
