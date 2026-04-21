@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, doc, runTransaction } from 'firebase/firestore';
 import { Clock, BarChart3, DollarSign, Package, AlertCircle, Printer } from 'lucide-react';
 import PlantillaDocumentoComercial from './PlantillaDocumentoComercial';
 
@@ -38,6 +38,15 @@ const resolverHistorialAbonos = (factura) => {
   if (Array.isArray(factura?.historialAbonos)) return { campo: 'historialAbonos', lista: factura.historialAbonos };
   if (Array.isArray(factura?.historialPagos)) return { campo: 'historialPagos', lista: factura.historialPagos };
   return { campo: 'historialAbonos', lista: [] };
+};
+
+const resolverMensajeErrorHistorial = (error) => {
+  if (error?.code === 'monto-invalido') return error.message;
+  if (error?.code === 'not-found') return 'La factura ya no existe o fue eliminada.';
+  if (error?.code === 'failed-precondition') return 'No se pudo completar la operación por conflicto de datos.';
+  if (error?.code === 'permission-denied') return 'No tienes permisos para actualizar este documento.';
+  if (error?.code === 'unavailable') return 'Firestore no está disponible. Revisa tu conexión e intenta nuevamente.';
+  return 'Ocurrió un error al procesar la operación.';
 };
 
 const normalizarDocumentoParaImpresion = (factura) => {
@@ -92,19 +101,29 @@ export default function ModuloHistorial() {
   const [montoAbono, setMontoAbono] = useState('');
   const [notaAbono, setNotaAbono] = useState('');
   const [errorAbono, setErrorAbono] = useState('');
+  const [errorCarga, setErrorCarga] = useState('');
+  const [cargandoDatos, setCargandoDatos] = useState(false);
   const [guardandoAbono, setGuardandoAbono] = useState(false);
 
   const cargarDatos = async () => {
-    // Cargar Logs generales
-    const snapLogs = await getDocs(collection(db, "historial"));
-    setLogs(snapLogs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
-    
-    // Cargar datos para BI (Facturas y CRM)
-    const snapFac = await getDocs(collection(db, "facturas"));
-    setFacturas(snapFac.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
-    
-    const snapCli = await getDocs(collection(db, "clientes"));
-    setClientes(snapCli.docs.map(d => `${d.data().nombres} ${d.data().apellidos}`));
+    setCargandoDatos(true);
+    try {
+      const [snapLogs, snapFac, snapCli] = await Promise.all([
+        getDocs(collection(db, "historial")),
+        getDocs(collection(db, "facturas")),
+        getDocs(collection(db, "clientes"))
+      ]);
+
+      setLogs(snapLogs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
+      setFacturas(snapFac.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
+      setClientes(snapCli.docs.map(d => `${d.data().nombres} ${d.data().apellidos}`));
+      setErrorCarga('');
+    } catch (error) {
+      console.error('Error cargando historial/BI:', error);
+      setErrorCarga(resolverMensajeErrorHistorial(error));
+    } finally {
+      setCargandoDatos(false);
+    }
   };
 
   useEffect(() => { cargarDatos(); }, [pestaña]);
@@ -134,9 +153,8 @@ export default function ModuloHistorial() {
 
   const registrarAbono = async () => {
     const facturaActual = modalAbono.factura;
-    if (!facturaActual) return;
+    if (!facturaActual?.id) return;
 
-    const saldoActual = obtenerSaldoPendiente(facturaActual);
     const valorIngresado = Number(montoAbono);
 
     if (Number.isNaN(valorIngresado) || valorIngresado <= 0) {
@@ -145,41 +163,58 @@ export default function ModuloHistorial() {
     }
 
     const monto = normalizarMoneda(valorIngresado);
-    if (monto > saldoActual) {
-      setErrorAbono(`El abono no puede superar el saldo pendiente (C$ ${saldoActual.toLocaleString('en-US', { minimumFractionDigits: 2 })}).`);
-      return;
-    }
 
     setGuardandoAbono(true);
     try {
-      const totalDocumento = obtenerTotal(facturaActual);
-      const totalPagadoActual = obtenerTotalPagado(facturaActual);
-      const nuevoTotalPagado = normalizarMoneda(Math.min(totalDocumento, totalPagadoActual + monto));
-      const nuevoSaldoPendiente = normalizarMoneda(Math.max(0, totalDocumento - nuevoTotalPagado));
-      const nuevoEstado = nuevoSaldoPendiente === 0 ? 'Saldado' : 'Pendiente';
+      await runTransaction(db, async (transaction) => {
+        const facturaRef = doc(db, "facturas", facturaActual.id);
+        const facturaSnap = await transaction.get(facturaRef);
 
-      const { campo, lista } = resolverHistorialAbonos(facturaActual);
-      const movimiento = {
-        fecha: new Date().toISOString(),
-        monto,
-        tipo: 'Abono',
-        nota: notaAbono.trim() || ''
-      };
+        if (!facturaSnap.exists()) {
+          const error = new Error('No se encontró la factura para aplicar el abono.');
+          error.code = 'not-found';
+          throw error;
+        }
 
-      const payload = {
-        totalPagado: nuevoTotalPagado,
-        saldoPendiente: nuevoSaldoPendiente,
-        estadoPago: nuevoEstado,
-        [campo]: [...lista, movimiento]
-      };
+        const facturaVigente = { id: facturaSnap.id, ...facturaSnap.data() };
+        const saldoActual = obtenerSaldoPendiente(facturaVigente);
+        if (monto > saldoActual) {
+          const error = new Error(`El abono no puede superar el saldo pendiente (C$ ${saldoActual.toLocaleString('en-US', { minimumFractionDigits: 2 })}).`);
+          error.code = 'monto-invalido';
+          throw error;
+        }
 
-      if (typeof facturaActual.abonoInicial !== 'number') {
-        payload.abonoInicial = obtenerAbonoInicial(facturaActual);
-      }
+        const totalDocumento = obtenerTotal(facturaVigente);
+        const totalPagadoActual = obtenerTotalPagado(facturaVigente);
+        const nuevoTotalPagado = normalizarMoneda(Math.min(totalDocumento, totalPagadoActual + monto));
+        const nuevoSaldoPendiente = normalizarMoneda(Math.max(0, totalDocumento - nuevoTotalPagado));
+        const nuevoEstado = nuevoSaldoPendiente === 0 ? 'Saldado' : 'Pendiente';
 
-      await updateDoc(doc(db, "facturas", facturaActual.id), payload);
+        const { campo, lista } = resolverHistorialAbonos(facturaVigente);
+        const movimiento = {
+          fecha: new Date().toISOString(),
+          monto,
+          tipo: 'Abono',
+          nota: notaAbono.trim() || ''
+        };
+
+        const payload = {
+          totalPagado: nuevoTotalPagado,
+          saldoPendiente: nuevoSaldoPendiente,
+          estadoPago: nuevoEstado,
+          [campo]: [...lista, movimiento]
+        };
+
+        if (typeof facturaVigente.abonoInicial !== 'number') {
+          payload.abonoInicial = obtenerAbonoInicial(facturaVigente);
+        }
+
+        transaction.update(facturaRef, payload);
+      });
       await cargarDatos();
       cerrarModalAbono();
+    } catch (error) {
+      setErrorAbono(resolverMensajeErrorHistorial(error));
     } finally {
       setGuardandoAbono(false);
     }
@@ -204,23 +239,34 @@ export default function ModuloHistorial() {
 
   return (
     <>
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-[calc(100vh-4rem)] flex flex-col overflow-hidden print:hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-auto md:h-[calc(100vh-4rem)] flex flex-col overflow-visible md:overflow-hidden print:hidden">
       
       {/* TABS HEADER */}
-      <div className="flex border-b bg-slate-50 px-6 pt-4 space-x-6 shrink-0">
-        <button onClick={() => setPestaña('general')} className={`pb-3 px-2 font-bold flex items-center border-b-2 transition-colors ${pestaña === 'general' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><Clock size={18} className="mr-2"/> Historial en Vivo</button>
-        <button onClick={() => setPestaña('bi')} className={`pb-3 px-2 font-bold flex items-center border-b-2 transition-colors ${pestaña === 'bi' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><BarChart3 size={18} className="mr-2"/> Análisis por Cliente</button>
+      <div className="flex flex-col sm:flex-row border-b bg-slate-50 px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 gap-2 sm:gap-6 shrink-0">
+        <button onClick={() => setPestaña('general')} className={`pb-2.5 sm:pb-3 px-2 font-bold text-sm sm:text-base flex items-center justify-center sm:justify-start border-b-2 transition-colors ${pestaña === 'general' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><Clock size={18} className="mr-2"/> Historial en Vivo</button>
+        <button onClick={() => setPestaña('bi')} className={`pb-2.5 sm:pb-3 px-2 font-bold text-sm sm:text-base flex items-center justify-center sm:justify-start border-b-2 transition-colors ${pestaña === 'bi' ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><BarChart3 size={18} className="mr-2"/> Análisis por Cliente</button>
       </div>
 
-      <div className="p-6 flex-1 overflow-y-auto bg-white">
+      <div className="p-3 sm:p-4 md:p-6 flex-1 overflow-y-visible md:overflow-y-auto bg-white">
+        {cargandoDatos && (
+          <div className="mb-4 text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-2 rounded-lg">
+            Cargando datos...
+          </div>
+        )}
+
+        {errorCarga && (
+          <div className="mb-4 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">
+            {errorCarga}
+          </div>
+        )}
         
         {/* PESTAÑA 1: HISTORIAL GENERAL */}
         {pestaña === 'general' && (
           <ul className="space-y-3">
             {logs.map(log => (
               <li key={log.id} className="bg-white border border-slate-100 p-4 rounded-xl shadow-sm flex flex-col hover:border-emerald-100 transition-colors">
-                <div className="flex justify-between items-center mb-2">
-                  <div className="flex items-center">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 gap-2">
+                  <div className="flex items-center flex-wrap gap-y-1">
                      <span className="font-black text-slate-800 text-xs uppercase tracking-widest mr-3">{log.tipo}</span>
                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">{log.usuario}</span>
                   </div>
@@ -235,7 +281,7 @@ export default function ModuloHistorial() {
         {/* PESTAÑA 2: BUSINESS INTELLIGENCE */}
         {pestaña === 'bi' && (
           <div>
-            <div className="mb-6 flex flex-col md:flex-row items-center justify-between bg-slate-800 p-6 rounded-xl text-white">
+            <div className="mb-6 flex flex-col md:flex-row items-center justify-between bg-slate-800 p-4 sm:p-5 md:p-6 rounded-xl text-white">
               <div className="w-full md:w-1/2">
                 <label className="block text-xs text-slate-300 uppercase tracking-widest mb-2 font-bold">Seleccionar Cliente a Analizar</label>
                 <select value={clienteSel} onChange={e => setClienteSel(e.target.value)} className="w-full bg-slate-700 border-none outline-none p-3 rounded-lg text-white font-bold cursor-pointer appearance-none">
@@ -247,14 +293,51 @@ export default function ModuloHistorial() {
 
             {clienteSel ? (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
                   <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm flex items-center"><div className="bg-green-100 p-3 rounded-full mr-4 text-green-600"><DollarSign size={24}/></div><div><p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Total Comprado</p><p className="text-2xl font-black text-slate-800">C$ {totalComprado.toLocaleString('en-US', {minimumFractionDigits:2})}</p></div></div>
                   <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm flex items-center"><div className="bg-red-100 p-3 rounded-full mr-4 text-red-600"><AlertCircle size={24}/></div><div><p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Deuda Pendiente</p><p className="text-2xl font-black text-red-600">C$ {deudaPendiente.toLocaleString('en-US', {minimumFractionDigits:2})}</p></div></div>
                   <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm flex items-center"><div className="bg-blue-100 p-3 rounded-full mr-4 text-blue-600"><Package size={24}/></div><div><p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Producto Favorito</p><p className="text-sm font-bold text-slate-800 truncate w-32" title={prodEstrella}>{prodEstrella}</p></div></div>
                 </div>
 
                 <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Desglose de Operaciones</h3>
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="md:hidden space-y-3">
+                  {docsCliente.length === 0 ? (
+                    <div className="border border-slate-200 rounded-xl p-5 text-center text-sm text-slate-400">
+                      No hay registros para este cliente.
+                    </div>
+                  ) : docsCliente.map((factura) => (
+                    <div key={factura.id} className="border border-slate-200 rounded-xl p-3 bg-slate-50 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-slate-700 text-sm">{factura.tipo} {factura.numeroDocumento ? `#${factura.numeroDocumento}` : ''}</p>
+                          <p className="text-xs text-slate-500">{new Date(factura.fecha).toLocaleDateString()}</p>
+                        </div>
+                        <span className="text-sm font-black text-slate-800">C$ {obtenerTotal(factura).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[11px] font-bold">{factura.formaPago}</span>
+                        {esCredito(factura) ? (
+                          obtenerEstadoCredito(factura) === 'Pendiente'
+                            ? <button onClick={() => abrirModalAbono(factura)} className="bg-red-100 text-red-600 px-2.5 py-1 rounded-full text-[11px] font-bold hover:bg-red-200">Pendiente (Abonar)</button>
+                            : <span className="bg-green-100 text-green-700 px-2.5 py-1 rounded-full text-[11px] font-bold">Saldado</span>
+                        ) : <span className="text-slate-400 text-[11px] font-semibold">Sin crédito</span>}
+                      </div>
+
+                      {esCredito(factura) && (
+                        <p className="text-[11px] text-slate-500 font-semibold">
+                          Saldo: C$ {obtenerSaldoPendiente(factura).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </p>
+                      )}
+
+                      <button onClick={() => abrirModalDocumento(factura)} className="w-full inline-flex items-center justify-center gap-1 text-xs font-bold bg-slate-800 text-white px-3 py-2 rounded-lg hover:bg-slate-900">
+                        <Printer size={14} /> Ver / Reimprimir
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="hidden md:block border border-slate-200 rounded-xl overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 border-b border-slate-200"><tr><th className="p-3">Fecha</th><th className="p-3">Documento</th><th className="p-3">Monto</th><th className="p-3 text-center">Método</th><th className="p-3 text-center">Estado (Créditos)</th><th className="p-3 text-center">Acciones</th></tr></thead>
                     <tbody className="divide-y divide-slate-100">
@@ -296,27 +379,27 @@ export default function ModuloHistorial() {
       </div>
 
       {modalDocumento.abierto && modalDocumento.factura && documentoSeleccionado && (
-        <div className="fixed inset-0 z-40 bg-slate-900/50 p-4 flex items-center justify-center">
-          <div className="w-full max-w-6xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 bg-slate-800 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="fixed inset-0 z-40 bg-slate-900/50 p-2 sm:p-4 flex items-center justify-center">
+          <div className="w-full max-w-6xl max-h-[95vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-800 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
                 <h4 className="text-lg font-bold">Vista de Documento Comercial</h4>
                 <p className="text-xs text-slate-200">
                   {documentoSeleccionado.tipo} {documentoSeleccionado.numeroDocumento ? `#${documentoSeleccionado.numeroDocumento}` : ''} • {documentoSeleccionado.cliente}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => window.print()} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-white font-bold hover:bg-emerald-600">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+                <button onClick={() => window.print()} className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-white font-bold hover:bg-emerald-600 w-full sm:w-auto">
                   <Printer size={16} /> Imprimir / Guardar PDF
                 </button>
-                <button onClick={cerrarModalDocumento} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100">
+                <button onClick={cerrarModalDocumento} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 w-full sm:w-auto">
                   Cerrar
                 </button>
               </div>
             </div>
 
-            <div className="p-4 bg-slate-100">
-              <div className="max-h-[70vh] overflow-auto border border-slate-300 rounded-lg bg-slate-300 p-4">
+            <div className="p-2 sm:p-4 bg-slate-100 flex-1 overflow-hidden">
+              <div className="h-full max-h-[65vh] sm:max-h-[70vh] overflow-auto border border-slate-300 rounded-lg bg-slate-300 p-3 sm:p-4">
                 <PlantillaDocumentoComercial documento={documentoSeleccionado} />
               </div>
             </div>
@@ -325,14 +408,14 @@ export default function ModuloHistorial() {
       )}
 
       {modalAbono.abierto && modalAbono.factura && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 p-4 flex items-center justify-center">
-          <div className="w-full max-w-xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 bg-slate-800 text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 p-2 sm:p-4 flex items-center justify-center">
+          <div className="w-full max-w-xl max-h-[95vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-800 text-white flex justify-between items-center">
               <h4 className="text-lg font-bold">Registrar Abono</h4>
               <button onClick={cerrarModalAbono} className="text-slate-200 hover:text-white font-bold text-xl leading-none" aria-label="Cerrar modal">×</button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Cliente</p><p className="font-bold text-slate-700">{modalAbono.factura.cliente}</p></div>
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Documento</p><p className="font-bold text-slate-700">{modalAbono.factura.tipo} {modalAbono.factura.numeroDocumento ? `#${modalAbono.factura.numeroDocumento}` : ''}</p></div>
@@ -372,9 +455,9 @@ export default function ModuloHistorial() {
               {errorAbono && <p className="text-sm text-red-600 font-semibold bg-red-50 border border-red-200 rounded-lg p-2">{errorAbono}</p>}
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
-              <button onClick={cerrarModalAbono} disabled={guardandoAbono} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-slate-100 disabled:opacity-50">Cancelar</button>
-              <button onClick={registrarAbono} disabled={guardandoAbono} className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50">
+            <div className="px-4 sm:px-6 py-4 border-t border-slate-200 flex flex-col-reverse sm:flex-row justify-end gap-2 bg-slate-50">
+              <button onClick={cerrarModalAbono} disabled={guardandoAbono} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-slate-100 disabled:opacity-50 w-full sm:w-auto">Cancelar</button>
+              <button onClick={registrarAbono} disabled={guardandoAbono} className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-50 w-full sm:w-auto">
                 {guardandoAbono ? 'Guardando...' : 'Guardar Abono'}
               </button>
             </div>

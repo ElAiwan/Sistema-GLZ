@@ -100,19 +100,19 @@ export default function ModuloInventario({ registrarHistorial, rol }) {
   );
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-      <h2 className="text-2xl font-bold text-slate-800 mb-6 border-b pb-4 flex justify-between items-center">
-        Gestión de Inventario
-        <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} className="text-sm border border-slate-300 rounded-lg p-2 bg-slate-50 outline-none text-slate-600 font-medium">
+    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200">
+      <div className="mb-6 border-b pb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-2xl font-bold text-slate-800">Gestión de Inventario</h2>
+        <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} className="text-sm border border-slate-300 rounded-lg p-2 bg-slate-50 outline-none text-slate-600 font-medium w-full sm:w-auto">
           <option value="Todas">🌍 Ver Todas las Bodegas</option>
           <option value="Managua">📍 Solo Managua</option>
           <option value="Tecolostote">📍 Solo Tecolostote</option>
         </select>
-      </h2>
+      </div>
 
       {/* SEGURIDAD: Solo el Admin puede agregar repuestos nuevos */}
       {rol === 'admin' && (
-        <form onSubmit={guardarRepuesto} className="mb-8 bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm">
+        <form onSubmit={guardarRepuesto} className="mb-8 bg-slate-50 p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
             <div className="space-y-2">
               <div>
@@ -133,10 +133,10 @@ export default function ModuloInventario({ registrarHistorial, rol }) {
             </div>
             <div><label className="block text-xs font-bold text-slate-500 mb-1">Stock Inicial</label><input type="number" min="0" required value={nuevoRepuesto.cantidad} onChange={e => setNuevoRepuesto({...nuevoRepuesto, cantidad: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
             <div><label className="block text-xs font-bold text-slate-500 mb-1">P/Unitario (Costo)</label><input type="number" step="0.01" required value={nuevoRepuesto.costo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, costo: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
-            <div className="md:col-span-2 flex gap-2">
-               <div className="w-1/3"><label className="block text-xs font-bold text-green-600 mb-1">P. Verde</label><input type="number" step="0.01" required value={nuevoRepuesto.precioVerde} onChange={e => setNuevoRepuesto({...nuevoRepuesto, precioVerde: e.target.value})} className="w-full border p-2 rounded-lg bg-green-50 outline-none" /></div>
-               <div className="w-1/3"><label className="block text-xs font-bold text-yellow-600 mb-1">P. Amarillo</label><input type="number" step="0.01" required value={nuevoRepuesto.precioAmarillo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, precioAmarillo: e.target.value})} className="w-full border p-2 rounded-lg bg-yellow-50 outline-none" /></div>
-               <div className="w-1/3"><label className="block text-xs font-bold text-red-500 mb-1">P. Rojo</label><input type="number" step="0.01" required value={nuevoRepuesto.precioRojo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, precioRojo: e.target.value})} className="w-full border p-2 rounded-lg bg-red-50 outline-none" /></div>
+            <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+               <div><label className="block text-xs font-bold text-green-600 mb-1">P. Verde</label><input type="number" step="0.01" required value={nuevoRepuesto.precioVerde} onChange={e => setNuevoRepuesto({...nuevoRepuesto, precioVerde: e.target.value})} className="w-full border p-2 rounded-lg bg-green-50 outline-none" /></div>
+               <div><label className="block text-xs font-bold text-yellow-600 mb-1">P. Amarillo</label><input type="number" step="0.01" required value={nuevoRepuesto.precioAmarillo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, precioAmarillo: e.target.value})} className="w-full border p-2 rounded-lg bg-yellow-50 outline-none" /></div>
+               <div><label className="block text-xs font-bold text-red-500 mb-1">P. Rojo</label><input type="number" step="0.01" required value={nuevoRepuesto.precioRojo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, precioRojo: e.target.value})} className="w-full border p-2 rounded-lg bg-red-50 outline-none" /></div>
             </div>
           </div>
           <button type="submit" className="bg-emerald-500 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-600 shadow-sm transition-colors">Guardar Repuesto</button>
@@ -148,8 +148,61 @@ export default function ModuloInventario({ registrarHistorial, rol }) {
         <input type="text" placeholder="Buscar por código o descripción..." className="w-full outline-none text-slate-700" value={busqueda} onChange={e => setBusqueda(e.target.value)} />
       </div>
 
-      <div className="overflow-x-auto min-h-[300px]">
-        <table className="w-full text-left border-collapse text-sm">
+      <div className="md:hidden space-y-3">
+        {filtrados.map((item) => (
+          <div key={item.id} className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="font-bold text-slate-800">{item.codigo}</p>
+                {item.alternateCode && <p className="text-[11px] font-semibold text-slate-400">Alt: {item.alternateCode}</p>}
+                <p className="text-xs text-slate-600 mt-1">{item.descripcion}</p>
+                <p className="text-xs text-slate-500 mt-1 flex items-center"><MapPin size={12} className="mr-1"/>{item.localidad || 'Managua'}</p>
+              </div>
+              <span className={`text-sm font-black ${!item.cantidad ? 'text-red-500' : 'text-slate-800'}`}>
+                {item.cantidad || 0}
+              </span>
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <p className="font-bold text-green-700">Verde</p>
+                <p>C$ {formatear(item.precioVerde)}</p>
+              </div>
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <p className="font-bold text-yellow-700">Amarillo</p>
+                <p>C$ {formatear(item.precioAmarillo)}</p>
+              </div>
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <p className="font-bold text-red-600">Rojo</p>
+                <p>C$ {formatear(item.precioRojo)}</p>
+              </div>
+            </div>
+
+            {rol === 'admin' && (
+              <div className="mt-3">
+                {editandoId === item.id ? (
+                  <div className="flex items-center gap-2">
+                    <input type="number" value={cantidadEditada} onChange={(e) => setCantidadEditada(Number(e.target.value))} className="w-full text-center border p-2 rounded" />
+                    <button onClick={() => guardarCantidad(item)} className="text-green-600 p-2 rounded bg-white border"><Check size={18} /></button>
+                    <button onClick={() => setEditandoId(null)} className="text-red-400 p-2 rounded bg-white border"><X size={18} /></button>
+                  </div>
+                ) : (
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => { setEditandoId(item.id); setCantidadEditada(item.cantidad); }} className="text-blue-500 p-2 rounded bg-white border border-slate-200" title="Ajustar Stock"><Edit2 size={16} /></button>
+                    <button onClick={() => eliminarRepuesto(item)} className="text-red-400 p-2 rounded bg-white border border-slate-200" title="Eliminar"><Trash2 size={16} /></button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        {filtrados.length === 0 && (
+          <p className="text-sm text-slate-400 text-center py-8">No hay repuestos para mostrar.</p>
+        )}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto min-h-[300px]">
+        <table className="hidden md:table w-full text-left border-collapse text-sm">
           <thead>
             <tr className="bg-slate-800 text-white">
               <th className="p-3 rounded-tl-lg">Código</th>

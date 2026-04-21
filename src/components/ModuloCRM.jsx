@@ -83,10 +83,10 @@ export default function ModuloCRM({ registrarHistorial, rol }) {
   );
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200">
       <h2 className="text-2xl font-bold text-slate-800 mb-6 border-b pb-4">Directorio de Clientes (CRM)</h2>
       
-      <form onSubmit={guardar} className="mb-8 bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm">
+      <form onSubmit={guardar} className="mb-8 bg-slate-50 p-4 sm:p-6 rounded-xl border border-slate-200 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
           <div><label className="block text-xs font-bold text-slate-500 mb-1">Nombres</label><input required value={nuevo.nombres} onChange={e => setNuevo({...nuevo, nombres: e.target.value})} placeholder="Ej: Iván Alejandro" className="w-full border p-2.5 rounded-lg outline-none focus:border-emerald-500 bg-white" /></div>
           <div><label className="block text-xs font-bold text-slate-500 mb-1">Apellidos</label><input required value={nuevo.apellidos} onChange={e => setNuevo({...nuevo, apellidos: e.target.value})} placeholder="Ej: Zelaya Alfaro" className="w-full border p-2.5 rounded-lg outline-none focus:border-emerald-500 bg-white" /></div>
@@ -95,14 +95,45 @@ export default function ModuloCRM({ registrarHistorial, rol }) {
           <div><label className="block text-xs font-bold text-slate-500 mb-1">Correo Electrónico</label><input type="email" value={nuevo.correo} onChange={e => setNuevo({...nuevo, correo: e.target.value})} placeholder="ejemplo@correo.com" className="w-full border p-2.5 rounded-lg outline-none focus:border-emerald-500 bg-white" /></div>
           <div><label className="block text-xs font-bold text-slate-500 mb-1">RUC</label><input value={nuevo.ruc} onChange={e => setNuevo({...nuevo, ruc: e.target.value})} placeholder="Ej: 0011402031003K" className="w-full border p-2.5 rounded-lg outline-none focus:border-emerald-500 bg-white uppercase" /></div>
         </div>
-        <button type="submit" className="bg-emerald-500 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-600 shadow-sm transition-colors">Guardar Cliente</button>
+        <button type="submit" className="bg-emerald-500 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-emerald-600 shadow-sm transition-colors w-full sm:w-auto">Guardar Cliente</button>
       </form>
 
       <div className="mb-4 flex items-center bg-white border border-slate-300 rounded-lg p-2 md:w-1/2 focus-within:border-emerald-500 transition-colors">
         <Search className="text-slate-400 mr-2" size={20} /><input type="text" placeholder="Buscar cliente..." className="w-full outline-none text-slate-700" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="md:hidden space-y-3">
+        {filtrados.map((c) => (
+          <div key={c.id} className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+            {editandoId === c.id ? (
+              <div className="space-y-2">
+                <input value={editado.nombres} onChange={e=>setEditado({...editado, nombres:e.target.value})} className="border p-2 w-full rounded" />
+                <input value={editado.telefono} onChange={e=>setEditado({...editado, telefono:formatoTelefono(e.target.value)})} className="border p-2 w-full rounded" />
+                <div className="flex justify-end gap-2">
+                  <button onClick={()=>guardarEdicion(c.id)} className="text-green-600 border bg-white rounded p-2"><Check size={16}/></button>
+                  <button onClick={()=>setEditandoId(null)} className="text-red-500 border bg-white rounded p-2"><X size={16}/></button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="font-bold text-slate-800">{c.nombres} {c.apellidos}</p>
+                <p className="text-sm text-slate-600 mt-1">{c.empresa||'-'}</p>
+                <p className="text-sm font-medium text-slate-700 mt-1">{c.telefono}</p>
+                <p className="text-sm text-slate-500 mt-1">{c.correo||'-'}</p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button onClick={()=>{setEditandoId(c.id); setEditado({...c});}} className="text-blue-500 border border-slate-200 bg-white p-2 rounded" title="Editar"><Edit2 size={16}/></button>
+                  {rol === 'admin' && <button onClick={()=>eliminar(c)} className="text-red-500 border border-slate-200 bg-white p-2 rounded" title="Eliminar"><Trash2 size={16}/></button>}
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+        {filtrados.length === 0 && (
+          <p className="text-sm text-slate-400 text-center py-8">No hay clientes para mostrar.</p>
+        )}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left border-collapse text-sm">
           <thead><tr className="bg-slate-800 text-white"><th className="p-3 rounded-tl-lg">Cliente</th><th className="p-3">Empresa</th><th className="p-3">Teléfono</th><th className="p-3">Correo</th><th className="p-3 text-center rounded-tr-lg">Acciones</th></tr></thead>
           <tbody>
