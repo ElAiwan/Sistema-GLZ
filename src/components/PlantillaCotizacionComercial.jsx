@@ -88,7 +88,6 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
   const numeroDocumento = documento?.numeroDocumento || '---';
   const fechaCotizacion = formatearFecha(documento?.fecha);
   const cliente = documento?.cliente || 'Cliente Mostrador';
-  const idCliente = documento?.idCliente || documento?.clienteId || '';
   const empresa = documento?.empresa || '';
   const telefono = documento?.telefono || '';
   const ruc = documento?.ruc || '';
@@ -135,7 +134,7 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1.2fr]">
             <div className="p-3 border-b md:border-b-0 md:border-r border-slate-300 flex flex-col justify-center">
               <img src="/logo.jpg" alt="GLZ" className="h-16 w-auto object-contain mb-1.5" />
-              <p className="text-sm font-black text-slate-900 tracking-wide">COTIZACIÓN COMERCIAL</p>
+              <p className="text-sm font-black text-slate-900 tracking-wide">COTIZACIÓN</p>
               <p className="text-[11px] text-slate-500 mt-0.5">Sistema GLZ Cloud</p>
             </div>
 
@@ -162,16 +161,11 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 border-t border-slate-300">
-            <CampoCompacto etiqueta="Id Cliente" valor={idCliente} className="border-b md:border-r" />
-            <CampoCompacto etiqueta="Nombre" valor={cliente} className="border-b" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2">
-            <CampoCompacto etiqueta="Empresa" valor={empresa} className="border-b md:border-r" />
+            <CampoCompacto etiqueta="Nombre" valor={cliente} className="border-b md:border-r" />
             <CampoCompacto etiqueta="Fecha de Cot" valor={fechaCotizacion} className="border-b" />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2">
+            <CampoCompacto etiqueta="Empresa" valor={empresa} className="border-b md:border-r" />
             <CampoCompacto etiqueta="Teléfono" valor={telefono} className="border-b md:border-r" />
-            <CampoCompacto etiqueta="RUC" valor={ruc} className="border-b" />
+            <CampoCompacto etiqueta="RUC" valor={ruc} className="border-b md:col-span-2" />
           </div>
 
           <div className="px-2.5 py-1.5">
