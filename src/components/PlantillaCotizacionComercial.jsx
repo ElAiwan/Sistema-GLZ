@@ -71,11 +71,13 @@ const normalizarItems = (items) => {
   });
 };
 
-function CeldaDato({ etiqueta, valor, className = '' }) {
+function CampoCompacto({ etiqueta, valor, className = '' }) {
   return (
-    <div className={`p-3 border-slate-300 ${className}`}>
-      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{etiqueta}</p>
-      <p className="mt-1 text-sm font-medium text-slate-800 break-words min-h-[1.2rem]">{valor || ''}</p>
+    <div className={`px-2.5 py-1.5 border-slate-300 ${className}`}>
+      <div className="grid grid-cols-[92px_1fr] items-start gap-2">
+        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{etiqueta}:</p>
+        <p className="text-sm font-medium text-slate-800 break-words leading-tight">{valor || ''}</p>
+      </div>
     </div>
   );
 }
@@ -131,23 +133,23 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
         }
       `}</style>
 
-      <article className="cotizacion-hoja mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-6 print:text-[11px]">
+      <article className="cotizacion-hoja mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-4 print:text-[11px]">
         <header className="border border-slate-300 rounded-lg overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1.2fr]">
-            <div className="p-4 border-b md:border-b-0 md:border-r border-slate-300 flex flex-col justify-center">
-              <img src="/logo.jpg" alt="GLZ" className="h-20 w-auto object-contain mb-2" />
-              <p className="text-base font-black text-slate-900 tracking-wide">COTIZACIÓN COMERCIAL</p>
-              <p className="text-xs text-slate-500 mt-1">Sistema GLZ Cloud</p>
+            <div className="p-3 border-b md:border-b-0 md:border-r border-slate-300 flex flex-col justify-center">
+              <img src="/logo.jpg" alt="GLZ" className="h-16 w-auto object-contain mb-1.5" />
+              <p className="text-sm font-black text-slate-900 tracking-wide">COTIZACIÓN COMERCIAL</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Sistema GLZ Cloud</p>
             </div>
 
-            <div className="p-4 bg-slate-50">
-              <div className="border border-slate-300 rounded-md bg-white px-3 py-2 mb-3 text-right">
+            <div className="p-3 bg-slate-50">
+              <div className="border border-slate-300 rounded-md bg-white px-2.5 py-1.5 mb-2 text-right">
                 <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Cotización #</p>
-                <p className="text-2xl font-black text-slate-900 leading-tight">{numeroDocumento}</p>
-                <p className="text-xs text-slate-600 mt-1"><span className="font-bold">Fecha:</span> {fechaCotizacion}</p>
+                <p className="text-xl font-black text-slate-900 leading-tight">{numeroDocumento}</p>
+                <p className="text-[11px] text-slate-600 mt-0.5"><span className="font-bold">Fecha:</span> {fechaCotizacion}</p>
               </div>
 
-              <div className="text-[12px] text-slate-700 space-y-1 leading-relaxed">
+              <div className="text-[11px] text-slate-700 space-y-0.5 leading-snug">
                 <p><span className="font-bold">Elaborar CK a nombre de:</span> Alejandro Salvador Zelaya Alfaro</p>
                 <p><span className="font-bold">Ruc:</span> 0011402031003K</p>
                 <p><span className="font-bold">Contacto:</span> 505 7726-4543 Tigo</p>
@@ -157,63 +159,69 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           </div>
         </header>
 
-        <section className="mt-5 border border-slate-300 rounded-lg overflow-hidden">
-          <div className="px-3 py-2 bg-slate-800 text-white text-[11px] font-black uppercase tracking-wider">
+        <section className="mt-3 border border-slate-300 rounded-lg overflow-hidden">
+          <div className="px-2.5 py-1.5 bg-slate-800 text-white text-[10px] font-black uppercase tracking-wider">
             Datos del Cliente
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2">
-            <CeldaDato etiqueta="Id Cliente" valor={idCliente} className="border-b md:border-r" />
-            <CeldaDato etiqueta="Nombre" valor={cliente} className="border-b" />
+          <div className="grid grid-cols-1 md:grid-cols-2 border-t border-slate-300">
+            <CampoCompacto etiqueta="Id Cliente" valor={idCliente} className="border-b md:border-r" />
+            <CampoCompacto etiqueta="Nombre" valor={cliente} className="border-b" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2">
-            <CeldaDato etiqueta="Empresa" valor={empresa} className="border-b md:border-r" />
-            <CeldaDato etiqueta="Fecha de Cot" valor={fechaCotizacion} className="border-b" />
+            <CampoCompacto etiqueta="Empresa" valor={empresa} className="border-b md:border-r" />
+            <CampoCompacto etiqueta="Fecha de Cot" valor={fechaCotizacion} className="border-b" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2">
-            <CeldaDato etiqueta="Teléfono" valor={telefono} className="border-b md:border-r" />
-            <CeldaDato etiqueta="RUC" valor={ruc} className="border-b" />
+            <CampoCompacto etiqueta="Teléfono" valor={telefono} className="border-b md:border-r" />
+            <CampoCompacto etiqueta="RUC" valor={ruc} className="border-b" />
           </div>
-          <CeldaDato etiqueta="Notas" valor={notas} />
+
+          <div className="px-2.5 py-1.5">
+            <div className="grid grid-cols-[92px_1fr] items-start gap-2">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Notas:</p>
+              <p className="text-sm font-medium text-slate-800 break-words leading-tight">{notas || ''}</p>
+            </div>
+          </div>
         </section>
 
-        <section className="mt-5">
+        <section className="mt-3">
           <table className="cotizacion-tabla w-full border border-slate-300 border-collapse text-[11px]">
             <thead>
               <tr className="bg-[#11325a] text-white">
-                <th className="px-3 py-2 border border-slate-300 text-center w-[11%]">Cantidad</th>
-                <th className="px-3 py-2 border border-slate-300 text-center w-[20%]">Código de producto</th>
-                <th className="px-3 py-2 border border-slate-300 text-left w-[37%]">Descripción</th>
-                <th className="px-3 py-2 border border-slate-300 text-right w-[16%]">P/Unitario</th>
-                <th className="px-3 py-2 border border-slate-300 text-right w-[16%]">Total</th>
+                <th className="px-2.5 py-1.5 border border-slate-300 text-center w-[11%]">Cantidad</th>
+                <th className="px-2.5 py-1.5 border border-slate-300 text-center w-[20%]">Código de producto</th>
+                <th className="px-2.5 py-1.5 border border-slate-300 text-left w-[37%]">Descripción</th>
+                <th className="px-2.5 py-1.5 border border-slate-300 text-right w-[16%]">P/Unitario</th>
+                <th className="px-2.5 py-1.5 border border-slate-300 text-right w-[16%]">Total</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr className="cotizacion-fila">
-                  <td colSpan="5" className="px-3 py-8 border border-slate-300 text-center text-slate-400 font-semibold">
+                  <td colSpan="5" className="px-2.5 py-4 border border-slate-300 text-center text-slate-400 font-semibold">
                     No hay productos cargados en esta cotización.
                   </td>
                 </tr>
               ) : items.map((item) => (
                 <tr key={item.id} className="cotizacion-fila">
-                  <td className="px-3 py-2 border border-slate-300 text-center align-top">{formatearCantidad(item.cantidad)}</td>
-                  <td className="px-3 py-2 border border-slate-300 text-center align-top">{item.codigo}</td>
-                  <td className="px-3 py-2 border border-slate-300 align-top">{item.descripcion}</td>
-                  <td className="px-3 py-2 border border-slate-300 text-right align-top">{formatearMonto(item.precio)}</td>
-                  <td className="px-3 py-2 border border-slate-300 text-right align-top">{formatearMonto(item.subtotal)}</td>
+                  <td className="px-2.5 py-1.5 border border-slate-300 text-center align-top">{formatearCantidad(item.cantidad)}</td>
+                  <td className="px-2.5 py-1.5 border border-slate-300 text-center align-top">{item.codigo}</td>
+                  <td className="px-2.5 py-1.5 border border-slate-300 align-top">{item.descripcion}</td>
+                  <td className="px-2.5 py-1.5 border border-slate-300 text-right align-top">{formatearMonto(item.precio)}</td>
+                  <td className="px-2.5 py-1.5 border border-slate-300 text-right align-top">{formatearMonto(item.subtotal)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
 
-        <section className="cotizacion-no-break mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <section className="cotizacion-no-break mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="border border-slate-300 rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-slate-100 border-b border-slate-300 text-xs font-black uppercase tracking-wider text-slate-700">
+            <div className="px-2.5 py-1.5 bg-slate-100 border-b border-slate-300 text-[10px] font-black uppercase tracking-wider text-slate-700">
               Condiciones Comerciales
             </div>
-            <div className="p-3 text-sm space-y-2">
+            <div className="p-2.5 text-sm space-y-1.5">
               <p><span className="font-bold text-slate-700">Forma de pago:</span> {formaPago}</p>
               <p><span className="font-bold text-slate-700">Validez:</span> Oferta válida por 7 días</p>
               <p><span className="font-bold text-slate-700">Cotización elaborada por:</span> {usuarioCreador}</p>
@@ -221,15 +229,15 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           </div>
 
           <div className="border border-slate-300 rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-slate-100 border-b border-slate-300 text-xs font-black uppercase tracking-wider text-slate-700">
+            <div className="px-2.5 py-1.5 bg-slate-100 border-b border-slate-300 text-[10px] font-black uppercase tracking-wider text-slate-700">
               Resumen
             </div>
-            <div className="p-3">
-              <div className="flex items-center justify-between py-1 border-b border-slate-200 text-sm">
+            <div className="p-2.5">
+              <div className="flex items-center justify-between py-0.5 border-b border-slate-200 text-sm">
                 <span className="font-semibold text-slate-600">Subtotal</span>
                 <span className="font-bold text-slate-800">{formatearMonto(subtotalCalculado)}</span>
               </div>
-              <div className="flex items-center justify-between pt-2 text-base">
+              <div className="flex items-center justify-between pt-1.5 text-base">
                 <span className="font-black text-slate-900">Total</span>
                 <span className="font-black text-slate-900">{formatearMonto(total)}</span>
               </div>
@@ -237,12 +245,12 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           </div>
         </section>
 
-        <footer className="cotizacion-no-break mt-8 pt-4 border-t border-slate-300">
-          <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-3">Marcas disponibles</p>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+        <footer className="cotizacion-no-break mt-4 pt-3 border-t border-slate-300">
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">Marcas disponibles</p>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
             {LOGOS_MARCAS.map((logo) => (
-              <div key={logo} className="border border-slate-200 rounded-md bg-white p-2 flex items-center justify-center">
-                <img src={`/${logo}`} alt={logo.replace('.png', '')} className="h-8 w-full object-contain" />
+              <div key={logo} className="border border-slate-200 rounded-md bg-white p-1.5 flex items-center justify-center">
+                <img src={`/${logo}`} alt={logo.replace('.png', '')} className="h-7 w-full object-contain" />
               </div>
             ))}
           </div>
@@ -251,4 +259,3 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
     </div>
   );
 }
-
