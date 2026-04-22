@@ -12,7 +12,7 @@ const LOGOS_MARCAS = [
   'wixfilters.png'
 ];
 
-const LOGO_ASSET_VERSION = '20260422-logos-v2';
+const LOGO_ASSET_VERSION = '20260422-logos-v3';
 
 const normalizarNumero = (valor) => {
   const numero = Number(valor);
