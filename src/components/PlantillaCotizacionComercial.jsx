@@ -109,6 +109,15 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
             margin: 1cm;
           }
 
+          * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          img {
+            background-color: white !important;
+          }
+
           .cotizacion-hoja {
             width: 100% !important;
             max-width: none !important;
@@ -126,11 +135,6 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           .cotizacion-no-break {
             break-inside: avoid;
             page-break-inside: avoid;
-          }
-
-          .cotizacion-hoja * {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
           }
         }
       `}</style>
@@ -251,8 +255,12 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           <p className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">Marcas disponibles</p>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
             {LOGOS_MARCAS.map((logo) => (
-              <div key={logo} className="border border-slate-200 rounded-md bg-white p-1.5 flex items-center justify-center">
-                <img src={`/${logo}?v=${LOGO_ASSET_VERSION}`} alt={logo.replace('.png', '')} className="h-7 w-full object-contain" />
+              <div key={logo} className="border border-slate-200 rounded-md bg-white p-2 flex items-center justify-center">
+                <img
+                  src={`/${logo}?v=${LOGO_ASSET_VERSION}`}
+                  alt={logo.replace('.png', '')}
+                  className="max-h-7 w-full object-contain bg-white"
+                />
               </div>
             ))}
           </div>
