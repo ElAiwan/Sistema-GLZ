@@ -37,6 +37,12 @@ const formatearFecha = (fecha) =>
     year: 'numeric'
   });
 
+const formatearCantidad = (valor) => {
+  const cantidad = normalizarNumero(valor);
+  if (Number.isInteger(cantidad)) return String(cantidad);
+  return cantidad.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 const normalizarItems = (items) => {
   if (!Array.isArray(items)) return [];
 
@@ -65,6 +71,15 @@ const normalizarItems = (items) => {
   });
 };
 
+function CeldaDato({ etiqueta, valor, className = '' }) {
+  return (
+    <div className={`p-3 border-slate-300 ${className}`}>
+      <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">{etiqueta}</p>
+      <p className="mt-1 text-sm font-medium text-slate-800 break-words min-h-[1.2rem]">{valor || ''}</p>
+    </div>
+  );
+}
+
 export default function PlantillaCotizacionComercial({ documento, soloImpresion = false }) {
   const numeroDocumento = documento?.numeroDocumento || '---';
   const fechaCotizacion = formatearFecha(documento?.fecha);
@@ -90,115 +105,143 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
             margin: 1cm;
           }
 
-          .cotizacion-print-root {
+          .cotizacion-hoja {
+            width: 100% !important;
             max-width: none !important;
+            margin: 0 !important;
             border: 0 !important;
             box-shadow: none !important;
-            margin: 0 !important;
+            padding: 0 !important;
           }
 
-          .cotizacion-print-table thead {
+          .cotizacion-tabla thead {
             display: table-header-group;
           }
 
-          .cotizacion-print-table tr,
-          .cotizacion-print-no-break {
+          .cotizacion-fila,
+          .cotizacion-no-break {
             break-inside: avoid;
             page-break-inside: avoid;
+          }
+
+          .cotizacion-hoja * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
         }
       `}</style>
 
-      <article className="cotizacion-print-root mx-auto w-full max-w-[21.59cm] min-h-[27.94cm] bg-white text-slate-800 border border-slate-200 shadow-sm p-6 print:p-0 print:min-h-0">
-        <header className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b-2 border-slate-800 pb-4">
-          <div>
-            <img src="/logo.jpg" alt="GLZ" className="h-16 w-auto object-contain" />
-            <p className="text-sm font-bold text-slate-900 mt-2 tracking-wide">COTIZACIÓN COMERCIAL</p>
-          </div>
-          <div className="text-sm text-slate-700 sm:text-right space-y-1">
-            <p><span className="font-bold">Elaborar CK a nombre de:</span> Alejandro Salvador Zelaya Alfaro</p>
-            <p><span className="font-bold">RUC:</span> 0011402031003K</p>
-            <p><span className="font-bold">Contacto:</span> 505 7726-4543 Tigo</p>
-            <p><span className="font-bold">Correo:</span> azelayaglz@gmail.com</p>
-            <p className="pt-2"><span className="font-bold">No. Cotización:</span> {numeroDocumento}</p>
-            <p><span className="font-bold">Fecha:</span> {fechaCotizacion}</p>
+      <article className="cotizacion-hoja mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-6 print:text-[11px]">
+        <header className="border border-slate-300 rounded-lg overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1.2fr]">
+            <div className="p-4 border-b md:border-b-0 md:border-r border-slate-300 flex flex-col justify-center">
+              <img src="/logo.jpg" alt="GLZ" className="h-20 w-auto object-contain mb-2" />
+              <p className="text-base font-black text-slate-900 tracking-wide">COTIZACIÓN COMERCIAL</p>
+              <p className="text-xs text-slate-500 mt-1">Sistema GLZ Cloud</p>
+            </div>
+
+            <div className="p-4 bg-slate-50">
+              <div className="border border-slate-300 rounded-md bg-white px-3 py-2 mb-3 text-right">
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Cotización #</p>
+                <p className="text-2xl font-black text-slate-900 leading-tight">{numeroDocumento}</p>
+                <p className="text-xs text-slate-600 mt-1"><span className="font-bold">Fecha:</span> {fechaCotizacion}</p>
+              </div>
+
+              <div className="text-[12px] text-slate-700 space-y-1 leading-relaxed">
+                <p><span className="font-bold">Elaborar CK a nombre de:</span> Alejandro Salvador Zelaya Alfaro</p>
+                <p><span className="font-bold">Ruc:</span> 0011402031003K</p>
+                <p><span className="font-bold">Contacto:</span> 505 7726-4543 Tigo</p>
+                <p><span className="font-bold">Correo:</span> azelayaglz@gmail.com</p>
+              </div>
+            </div>
           </div>
         </header>
 
-        <section className="mt-4 border border-slate-300 rounded-lg overflow-hidden text-sm">
-          <div className="grid grid-cols-1 sm:grid-cols-2">
-            <div className="border-b sm:border-b-0 sm:border-r border-slate-300 p-3"><span className="font-bold text-slate-600 block text-xs uppercase">Id Cliente</span><span>{idCliente}</span></div>
-            <div className="border-b border-slate-300 p-3"><span className="font-bold text-slate-600 block text-xs uppercase">Nombre</span><span>{cliente}</span></div>
+        <section className="mt-5 border border-slate-300 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 bg-slate-800 text-white text-[11px] font-black uppercase tracking-wider">
+            Datos del Cliente
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2">
-            <div className="border-b sm:border-r border-slate-300 p-3"><span className="font-bold text-slate-600 block text-xs uppercase">Empresa</span><span>{empresa}</span></div>
-            <div className="border-b border-slate-300 p-3"><span className="font-bold text-slate-600 block text-xs uppercase">Fecha de Cot</span><span>{fechaCotizacion}</span></div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <CeldaDato etiqueta="Id Cliente" valor={idCliente} className="border-b md:border-r" />
+            <CeldaDato etiqueta="Nombre" valor={cliente} className="border-b" />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2">
-            <div className="border-b sm:border-r border-slate-300 p-3"><span className="font-bold text-slate-600 block text-xs uppercase">Teléfono</span><span>{telefono}</span></div>
-            <div className="border-b border-slate-300 p-3"><span className="font-bold text-slate-600 block text-xs uppercase">RUC</span><span>{ruc}</span></div>
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <CeldaDato etiqueta="Empresa" valor={empresa} className="border-b md:border-r" />
+            <CeldaDato etiqueta="Fecha de Cot" valor={fechaCotizacion} className="border-b" />
           </div>
-          <div className="p-3">
-            <span className="font-bold text-slate-600 block text-xs uppercase">Notas</span>
-            <span>{notas}</span>
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <CeldaDato etiqueta="Teléfono" valor={telefono} className="border-b md:border-r" />
+            <CeldaDato etiqueta="RUC" valor={ruc} className="border-b" />
           </div>
+          <CeldaDato etiqueta="Notas" valor={notas} />
         </section>
 
         <section className="mt-5">
-          <table className="cotizacion-print-table w-full border border-slate-300 text-[11px]">
+          <table className="cotizacion-tabla w-full border border-slate-300 border-collapse text-[11px]">
             <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="px-3 py-2 text-center border border-slate-300">Cantidad</th>
-                <th className="px-3 py-2 text-center border border-slate-300">Código de producto</th>
-                <th className="px-3 py-2 text-left border border-slate-300">Descripción</th>
-                <th className="px-3 py-2 text-right border border-slate-300">P/Unitario</th>
-                <th className="px-3 py-2 text-right border border-slate-300">Total</th>
+              <tr className="bg-[#11325a] text-white">
+                <th className="px-3 py-2 border border-slate-300 text-center w-[11%]">Cantidad</th>
+                <th className="px-3 py-2 border border-slate-300 text-center w-[20%]">Código de producto</th>
+                <th className="px-3 py-2 border border-slate-300 text-left w-[37%]">Descripción</th>
+                <th className="px-3 py-2 border border-slate-300 text-right w-[16%]">P/Unitario</th>
+                <th className="px-3 py-2 border border-slate-300 text-right w-[16%]">Total</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
-                <tr>
-                  <td colSpan="5" className="px-3 py-6 text-center text-slate-400 border border-slate-300">
-                    Sin productos seleccionados
+                <tr className="cotizacion-fila">
+                  <td colSpan="5" className="px-3 py-8 border border-slate-300 text-center text-slate-400 font-semibold">
+                    No hay productos cargados en esta cotización.
                   </td>
                 </tr>
               ) : items.map((item) => (
-                <tr key={item.id}>
-                  <td className="px-3 py-2 text-center border border-slate-300">{item.cantidad}</td>
-                  <td className="px-3 py-2 text-center border border-slate-300">{item.codigo}</td>
-                  <td className="px-3 py-2 border border-slate-300">{item.descripcion}</td>
-                  <td className="px-3 py-2 text-right border border-slate-300">{formatearMonto(item.precio)}</td>
-                  <td className="px-3 py-2 text-right border border-slate-300">{formatearMonto(item.subtotal)}</td>
+                <tr key={item.id} className="cotizacion-fila">
+                  <td className="px-3 py-2 border border-slate-300 text-center align-top">{formatearCantidad(item.cantidad)}</td>
+                  <td className="px-3 py-2 border border-slate-300 text-center align-top">{item.codigo}</td>
+                  <td className="px-3 py-2 border border-slate-300 align-top">{item.descripcion}</td>
+                  <td className="px-3 py-2 border border-slate-300 text-right align-top">{formatearMonto(item.precio)}</td>
+                  <td className="px-3 py-2 border border-slate-300 text-right align-top">{formatearMonto(item.subtotal)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
 
-        <section className="cotizacion-print-no-break mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-          <div className="border border-slate-300 rounded-lg p-3 space-y-1">
-            <p><span className="font-bold text-slate-700">Forma de pago:</span> {formaPago}</p>
-            <p><span className="font-bold text-slate-700">Validez:</span> Oferta válida por 7 días</p>
-            <p><span className="font-bold text-slate-700">Cotización elaborada por:</span> {usuarioCreador}</p>
+        <section className="cotizacion-no-break mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="border border-slate-300 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-slate-100 border-b border-slate-300 text-xs font-black uppercase tracking-wider text-slate-700">
+              Condiciones Comerciales
+            </div>
+            <div className="p-3 text-sm space-y-2">
+              <p><span className="font-bold text-slate-700">Forma de pago:</span> {formaPago}</p>
+              <p><span className="font-bold text-slate-700">Validez:</span> Oferta válida por 7 días</p>
+              <p><span className="font-bold text-slate-700">Cotización elaborada por:</span> {usuarioCreador}</p>
+            </div>
           </div>
 
-          <div className="border border-slate-300 rounded-lg p-3">
-            <div className="flex items-center justify-between py-1 border-b border-slate-200">
-              <span className="font-semibold text-slate-600">Subtotal</span>
-              <span className="font-bold">{formatearMonto(subtotalCalculado)}</span>
+          <div className="border border-slate-300 rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-slate-100 border-b border-slate-300 text-xs font-black uppercase tracking-wider text-slate-700">
+              Resumen
             </div>
-            <div className="flex items-center justify-between py-2">
-              <span className="font-black text-slate-800">Total</span>
-              <span className="font-black text-base text-slate-900">{formatearMonto(total)}</span>
+            <div className="p-3">
+              <div className="flex items-center justify-between py-1 border-b border-slate-200 text-sm">
+                <span className="font-semibold text-slate-600">Subtotal</span>
+                <span className="font-bold text-slate-800">{formatearMonto(subtotalCalculado)}</span>
+              </div>
+              <div className="flex items-center justify-between pt-2 text-base">
+                <span className="font-black text-slate-900">Total</span>
+                <span className="font-black text-slate-900">{formatearMonto(total)}</span>
+              </div>
             </div>
           </div>
         </section>
 
-        <footer className="cotizacion-print-no-break mt-8 pt-4 border-t border-slate-300">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Marcas disponibles</p>
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 items-center">
+        <footer className="cotizacion-no-break mt-8 pt-4 border-t border-slate-300">
+          <p className="text-xs font-black uppercase tracking-wider text-slate-500 mb-3">Marcas disponibles</p>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
             {LOGOS_MARCAS.map((logo) => (
-              <div key={logo} className="border border-slate-200 rounded-md p-2 bg-white">
+              <div key={logo} className="border border-slate-200 rounded-md bg-white p-2 flex items-center justify-center">
                 <img src={`/${logo}`} alt={logo.replace('.png', '')} className="h-8 w-full object-contain" />
               </div>
             ))}
