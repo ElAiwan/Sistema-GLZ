@@ -12,6 +12,8 @@ const LOGOS_MARCAS = [
   'wixfilters.png'
 ];
 
+const LOGO_ASSET_VERSION = '20260422-logos-v2';
+
 const normalizarNumero = (valor) => {
   const numero = Number(valor);
   if (Number.isNaN(numero)) return 0;
@@ -250,7 +252,7 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
             {LOGOS_MARCAS.map((logo) => (
               <div key={logo} className="border border-slate-200 rounded-md bg-white p-1.5 flex items-center justify-center">
-                <img src={`/${logo}`} alt={logo.replace('.png', '')} className="h-7 w-full object-contain" />
+                <img src={`/${logo}?v=${LOGO_ASSET_VERSION}`} alt={logo.replace('.png', '')} className="h-7 w-full object-contain" />
               </div>
             ))}
           </div>
