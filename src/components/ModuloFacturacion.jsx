@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, getDoc, setDoc, runTransaction } from 'firebase/firestore';
 import { Search, Trash2, Printer } from 'lucide-react';
-import PlantillaDocumentoComercial from './PlantillaDocumentoComercial';
+import PlantillaDocumentoImpresion from './PlantillaDocumentoImpresion';
 
 const NOTAS_SUGERIDAS = [
   'Entrega Inmediata',
@@ -42,12 +42,13 @@ const resolverMensajeErrorFacturacion = (error) => {
   return 'No se pudo procesar el documento. Intenta nuevamente.';
 };
 
-export default function ModuloFacturacion({ registrarHistorial }) {
+export default function ModuloFacturacion({ registrarHistorial, usuarioActual = '' }) {
   const [inventario, setInventario] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   
   const [tipoTransaccion, setTipoTransaccion] = useState('Cotización');
+  const [clienteId, setClienteId] = useState('');
   const [clienteStr, setClienteStr] = useState('');
   const [empresa, setEmpresa] = useState('');
   const [telefono, setTelefono] = useState('');
@@ -102,7 +103,15 @@ export default function ModuloFacturacion({ registrarHistorial }) {
   const seleccionarCliente = (nombre) => {
     setClienteStr(nombre);
     const c = clientes.find(c => `${c.nombres} ${c.apellidos}` === nombre);
-    if (c) { setEmpresa(c.empresa||''); setTelefono(c.telefono||''); setRuc(c.ruc||''); }
+    if (c) {
+      setClienteId(c.id || '');
+      setEmpresa(c.empresa||'');
+      setTelefono(c.telefono||'');
+      setRuc(c.ruc||'');
+      return;
+    }
+
+    setClienteId('');
   };
 
   const agregar = (prod) => {
@@ -235,11 +244,13 @@ export default function ModuloFacturacion({ registrarHistorial }) {
 
           const facturaRef = doc(collection(db, "facturas"));
           transaction.set(facturaRef, {
+            idCliente: clienteId || '',
             cliente: nombreFinal,
             empresa: empresa || '',
             telefono: telefono,
             ruc: ruc || '',
             notas: notas || '',
+            usuarioCreador: usuarioActual || '',
             numeroDocumento,
             secuenciaDocumento: secuenciaActual,
             tipo: tipoTransaccion,
@@ -276,6 +287,7 @@ export default function ModuloFacturacion({ registrarHistorial }) {
       window.print();
       setNumDoc(resultado.siguienteSecuencia);
       setCarrito([]);
+      setClienteId('');
       setClienteStr('');
       setEmpresa('');
       setTelefono('');
@@ -304,11 +316,14 @@ export default function ModuloFacturacion({ registrarHistorial }) {
     tipo: tipoTransaccion,
     numeroDocumento: numFormateadoVista,
     fecha: new Date().toISOString(),
+    idCliente: clienteId || '',
     formaPago,
     cliente: clienteStr || 'Cliente Mostrador',
+    empresa: empresa || '',
     telefono,
     ruc,
     notas,
+    usuarioCreador: usuarioActual || '',
     total,
     items: carrito.map((item) => ({
       id: item.id,
@@ -604,7 +619,7 @@ export default function ModuloFacturacion({ registrarHistorial }) {
         </div>
       </div>
 
-      <PlantillaDocumentoComercial documento={documentoParaImpresion} soloImpresion />
+      <PlantillaDocumentoImpresion documento={documentoParaImpresion} soloImpresion />
     </>
   );
 }

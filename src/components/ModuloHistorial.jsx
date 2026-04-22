@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, runTransaction } from 'firebase/firestore';
 import { Clock, BarChart3, DollarSign, Package, AlertCircle, Printer } from 'lucide-react';
-import PlantillaDocumentoComercial from './PlantillaDocumentoComercial';
+import PlantillaDocumentoImpresion from './PlantillaDocumentoImpresion';
 
 const normalizarMoneda = (valor) => {
   const numero = Number(valor);
@@ -78,11 +78,14 @@ const normalizarDocumentoParaImpresion = (factura) => {
     tipo: factura?.tipo || 'Factura',
     numeroDocumento: factura?.numeroDocumento || '',
     fecha: factura?.fecha || new Date().toISOString(),
+    idCliente: factura?.idCliente || factura?.clienteId || '',
     formaPago: factura?.formaPago || 'Efectivo',
     cliente: factura?.cliente || 'Cliente Mostrador',
+    empresa: factura?.empresa || '',
     telefono: factura?.telefono || '',
     ruc: factura?.ruc || '',
     notas: factura?.notas || '',
+    usuarioCreador: factura?.usuarioCreador || factura?.usuario || factura?.creadoPor || '',
     total: factura?.total != null ? normalizarMoneda(factura.total) : totalItems,
     items: itemsNormalizados
   };
@@ -400,7 +403,7 @@ export default function ModuloHistorial() {
 
             <div className="p-2 sm:p-4 bg-slate-100 flex-1 overflow-hidden">
               <div className="h-full max-h-[65vh] sm:max-h-[70vh] overflow-auto border border-slate-300 rounded-lg bg-slate-300 p-3 sm:p-4">
-                <PlantillaDocumentoComercial documento={documentoSeleccionado} />
+                <PlantillaDocumentoImpresion documento={documentoSeleccionado} />
               </div>
             </div>
           </div>
@@ -466,7 +469,7 @@ export default function ModuloHistorial() {
       )}
     </div>
     {modalDocumento.abierto && documentoSeleccionado && (
-      <PlantillaDocumentoComercial documento={documentoSeleccionado} soloImpresion />
+      <PlantillaDocumentoImpresion documento={documentoSeleccionado} soloImpresion />
     )}
     </>
   );
