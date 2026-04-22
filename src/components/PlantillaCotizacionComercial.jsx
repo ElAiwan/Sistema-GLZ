@@ -106,25 +106,16 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
         @media print {
           @page {
             size: letter;
-            margin: 1cm;
+            margin: 0;
           }
 
           * {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
 
           img {
             background-color: white !important;
-          }
-
-          .cotizacion-hoja {
-            width: 100% !important;
-            max-width: none !important;
-            margin: 0 !important;
-            border: 0 !important;
-            box-shadow: none !important;
-            padding: 0 !important;
           }
 
           .cotizacion-tabla thead {
@@ -139,7 +130,7 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
         }
       `}</style>
 
-      <article className="cotizacion-hoja mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-4 print:text-[11px]">
+      <article className="cotizacion-hoja mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-4">
         <header className="border border-slate-300 rounded-lg overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1.2fr]">
             <div className="p-3 border-b md:border-b-0 md:border-r border-slate-300 flex flex-col justify-center">
