@@ -1,91 +1,256 @@
-# 🛠️ Sistema GLZ Cloud - ERP & POS
+# Sistema GLZ Cloud
 
 ![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
 ![Vite](https://img.shields.io/badge/Vite-B73BFE?style=for-the-badge&logo=vite&logoColor=FFD62E)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
 ![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)
 
-Plataforma integral de gestión empresarial desarrollada a medida. Diseñada para centralizar y optimizar las operaciones de venta, control de stock y análisis de clientes, con arquitectura en la nube y persistencia de datos en tiempo real.
+Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaciones, CRM de clientes, historial de operaciones y análisis por cliente, con backend en Firebase.
 
-## ✨ Módulos Principales
+## Qué resuelve este sistema
 
-* 📦 **Gestión de Inventario (Multi-Sucursal):** Control de stock segmentado por localidades, estructuración de costos y categorización visual de precios de venta (Verde, Amarillo, Rojo).
-* 📄 **Facturación Inteligente:** Sistema POS con cálculo de subtotales, catálogo dinámico con buscador en tiempo real y generación de documentos para impresión por coordenadas (formato oficial).
-* 👥 **CRM (Directorio de Clientes):** Registro detallado de clientes con formato estandarizado, historial de transacciones y seguimiento de líneas de crédito.
-* 📊 **Business Intelligence (BI):** Panel analítico con KPIs por cliente, detección de productos estrella, consolidado de compras y gestión de deudas/abonos.
-* 🔐 **Seguridad y RBAC:** Autenticación por Firebase Auth con Control de Acceso Basado en Roles (Administrador vs. Vendedor) para proteger datos financieros y acciones destructivas.
+- Control de inventario por bodega.
+- Venta y cotización con catálogo dinámico.
+- Bloqueo de stock en factura (venta real) y advertencia en cotización.
+- Gestión de créditos, abonos y saldo pendiente.
+- Historial operativo + KPIs por cliente.
+- Impresión comercial:
+  - Factura calibrada por coordenadas sobre formato físico.
+  - Cotización moderna, multipágina y exportable a PDF desde el navegador.
 
-## 🚀 Instalación y Despliegue Local
+## Stack técnico
 
-Para correr este proyecto en un entorno de desarrollo local:
+- Frontend: React 19 + Hooks + componentes funcionales.
+- Bundler: Vite.
+- Estilos: Tailwind CSS.
+- Backend/BaaS: Firebase Authentication + Cloud Firestore.
+- Íconos: lucide-react.
 
-1. Clonar el repositorio:
-   ```bash
-   git clone [https://github.com/ElAiwan/Sistema-GLZ.git](https://github.com/ElAiwan/Sistema-GLZ.git)
+## Módulos funcionales
 
-2. Instalar las dependencias:
-    ```bash
-    npm install
+- `Inventario`
+  - CRUD de repuestos (admin).
+  - Ajuste de stock.
+  - Búsqueda por código, descripción y código alterno.
+  - Filtro por localidad (`Managua`, `Tecolostote`).
+- `Facturación / Cotización`
+  - Documento comercial con carrito.
+  - Control de concurrencia con `runTransaction` + reintento.
+  - Secuencia de documento en `sistema/secuencia`.
+  - Crédito con `abonoInicial`, `totalPagado`, `saldoPendiente`, `historialAbonos`.
+  - Selección de código a imprimir (`codigo` o `alternateCode`).
+- `CRM`
+  - Alta, edición y eliminación de clientes (delete solo admin).
+- `Historial / BI`
+  - Bitácora de eventos.
+  - Análisis por cliente (total comprado, deuda, producto favorito).
+  - Registro de abonos desde modal.
+  - Reimpresión de documentos desde historial.
 
-3. Configurar las variables de entorno de Firebase creando un archivo .env en la raíz del proyecto.
+## Arquitectura resumida
 
-4. Iniciar el servidor local:
-    ```bash
-    npm run dev
+- App SPA con layout principal en `src/App.jsx`.
+- Carga de sesión con `onAuthStateChanged`.
+- Rol leído desde `roles/{email}` para habilitar vistas en UI.
+- Cada módulo opera sobre su colección Firestore.
+- La lógica de impresión se encapsula en:
+  - `PlantillaDocumentoComercial.jsx` para factura calibrada.
+  - `PlantillaCotizacionComercial.jsx` para cotización corporativa.
+  - `PlantillaDocumentoImpresion.jsx` como selector por tipo.
 
-🏗️ Arquitectura
-* Frontend: React (Hooks, Functional Components) + Tailwind CSS para UI/UX responsive.
+## Estructura del proyecto
 
-* Backend & BaaS: Firebase Cloud Firestore (Base de datos NoSQL) y Firebase Authentication.
+```txt
+src/
+  App.jsx
+  firebase.js
+  components/
+    Login.jsx
+    ModuloInventario.jsx
+    ModuloFacturacion.jsx
+    ModuloCRM.jsx
+    ModuloHistorial.jsx
+    PlantillaDocumentoComercial.jsx
+    PlantillaCotizacionComercial.jsx
+    PlantillaDocumentoImpresion.jsx
+public/
+  logo.jpg
+  *.png (logos de marcas para cotización)
+firebase.json
+firestore.rules
+firestore.indexes.json
+.firebaserc
+```
 
-* Estructura: Modularizada por componentes de negocio para alta mantenibilidad y escalabilidad.
+## Modelo de datos (Firestore)
 
-## 🔒 Recomendación de Reglas Firestore (Producción)
+### `repuestos/{id}`
 
-Este repositorio ahora incluye archivos base de reglas:
+- `codigo: string`
+- `alternateCode?: string`
+- `descripcion: string`
+- `cantidad: number`
+- `costo: number`
+- `precioVerde: number`
+- `precioAmarillo: number`
+- `precioRojo: number`
+- `localidad: "Managua" | "Tecolostote" | string`
 
-* `firebase.json`
-* `firestore.rules`
-* `firestore.indexes.json`
+### `clientes/{id}`
 
-Para publicar reglas:
+- `nombres: string`
+- `apellidos: string`
+- `empresa?: string`
+- `telefono: string`
+- `correo?: string`
+- `ruc?: string`
+
+### `facturas/{id}`
+
+- `tipo: "Factura" | "Cotización"`
+- `numeroDocumento: string`
+- `secuenciaDocumento: number`
+- `fecha: string (ISO)`
+- `idCliente?: string`
+- `cliente: string`
+- `empresa?: string`
+- `telefono?: string`
+- `ruc?: string`
+- `notas?: string`
+- `formaPago: string`
+- `total: number`
+- `estadoPago: "Pagado" | "Pendiente" | "Saldado"`
+- `abonoInicial?: number`
+- `totalPagado?: number`
+- `saldoPendiente?: number`
+- `historialAbonos?: Array<{fecha,monto,tipo,nota}>`
+- `usuarioCreador?: string`
+- `items: Array<...>`
+  - `idRepuesto?: string`
+  - `codigo?: string`
+  - `alternateCode?: string`
+  - `usarCodigoAlterno?: boolean`
+  - `codigoImpresion?: string`
+  - `desc/descripcion: string`
+  - `cant: number`
+  - `precio: number`
+  - `subtotal: number`
+
+### `sistema/secuencia`
+
+- `siguiente: number`
+
+### `roles/{email}`
+
+- `rol: "admin" | "vendedor"`
+- `nombre?: string`
+
+### `historial/{id}`
+
+- `tipo: string`
+- `descripcion: string`
+- `usuario: string`
+- `fecha: string (ISO)`
+
+## Reglas de negocio importantes
+
+- En `Factura`, no se permite vender por encima del stock disponible.
+- En `Cotización`, se permite cotizar sin afectar stock.
+- Estado de crédito:
+  - `Saldado` solo cuando `saldoPendiente === 0`.
+  - `Pendiente` cuando `saldoPendiente > 0`.
+- Facturación crítica (secuencia + stock + documento) se ejecuta en transacción Firestore.
+
+## Configuración local
+
+### Requisitos
+
+- Node.js `20.19+` recomendado por Vite 7.
+- npm.
+- Proyecto Firebase activo.
+
+### Instalación
+
+```bash
+git clone https://github.com/ElAiwan/Sistema-GLZ.git
+cd Sistema-GLZ
+npm install
+```
+
+### Variables de entorno
+
+Crear `.env` en la raíz:
+
+```bash
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
+### Ejecutar en desarrollo
+
+```bash
+npm run dev
+```
+
+## Comandos útiles
+
+```bash
+npm run dev      # servidor de desarrollo
+npm run lint     # análisis estático
+npm run build    # build de producción
+npm run preview  # preview local del build
+```
+
+## Firebase (este repo)
+
+- Proyecto por defecto en `.firebaserc`: `glz-sistema`.
+- Hosting SPA configurado en `firebase.json` (`dist` + rewrite a `/index.html`).
+- Reglas e índices en:
+  - `firestore.rules`
+  - `firestore.indexes.json`
+
+### Deploy de hosting
+
+```bash
+npm run build
+firebase deploy --only hosting
+```
+
+### Deploy de reglas/índices
 
 ```bash
 firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-Para que la seguridad no dependa solo del frontend, se recomienda aplicar reglas del lado servidor que:
+## Seguridad
 
-* permitan leer/escribir únicamente a usuarios autenticados;
-* separen permisos por rol (`admin`, `vendedor`) desde `/roles/{email}`;
-* validen que solo `admin` pueda borrar/ajustar inventario y ver historial sensible;
-* permitan crear facturas solo con campos esperados (evitar payloads arbitrarios).
+Las reglas actuales en `firestore.rules` ya aplican controles por rol para:
 
-Ejemplo base (ajustar a su proyecto real):
+- lectura/escritura de clientes y repuestos según perfil;
+- eliminación restringida a admin en módulos sensibles;
+- creación/actualización de facturas con restricciones;
+- actualización de secuencia con incremento controlado;
+- historial visible para admin.
 
-```txt
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
+Recomendación: mantener UI y reglas alineadas; nunca depender solo del frontend para permisos.
 
-    match /roles/{userEmail} {
-      allow read: if signedIn();
-      allow write: if false;
-    }
+## Impresión de documentos
 
-    match /repuestos/{id} {
-      allow read: if signedIn();
-      allow write: if signedIn(); // endurecer por rol admin en producción
-    }
+- `Factura`: plantilla calibrada por coordenadas para formato físico preimpreso.
+- `Cotización`: plantilla fluida, compacta, multipágina y profesional.
+- Selector automático por tipo: `PlantillaDocumentoImpresion.jsx`.
 
-    match /facturas/{id} {
-      allow read: if signedIn();
-      allow create, update: if signedIn();
-      allow delete: if false;
-    }
-  }
-}
-```
+Nota: si se sustituyen imágenes en `public` con el mismo nombre y no se reflejan, usar cache-busting o forzar recarga del navegador.
+
+## Estado actual de calidad
+
+- `npm run lint`: pasando.
+- `npm run build`: compila correctamente (pueden aparecer warnings de chunk grande o versión de Node si es menor a `20.19`).
+
+## Licencia
+
+Uso interno / privado de GLZ, salvo que se defina una licencia pública explícita.
