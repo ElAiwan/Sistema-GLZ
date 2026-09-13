@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, getDoc, setDoc, runTransaction } from 'firebase/firestore';
-import { Search, Trash2, Printer } from 'lucide-react';
+import { Search, Trash2, Printer, X, AlertTriangle } from 'lucide-react';
 import PlantillaDocumentoImpresion from './PlantillaDocumentoImpresion';
+import { ESTADO_COTIZACION, obtenerEstadoCotizacion } from '../utils/documentos';
 
 const NOTAS_SUGERIDAS = [
   'Entrega Inmediata',
@@ -17,6 +18,10 @@ const normalizarMoneda = (valor) => {
   if (Number.isNaN(numero)) return NaN;
   return Math.round((numero + Number.EPSILON) * 100) / 100;
 };
+
+// Los tres precios de lista de un repuesto. Sirve para detectar si el precio
+// cotizado ya no coincide con ninguno de los vigentes.
+const preciosEstandar = (item) => [item?.precioVerde, item?.precioAmarillo, item?.precioRojo].map(Number);
 
 const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -35,6 +40,8 @@ const ejecutarTransaccionConReintento = async (operacion, maxReintentos = 2) => 
 
 const resolverMensajeErrorFacturacion = (error) => {
   if (error?.code === 'stock-insuficiente') return error.message;
+  if (error?.code === 'cotizacion-invalida') return error.message;
+  if (error?.code === 'invalid-argument') return 'Firestore rechazó la operación. Recarga la página e intenta de nuevo.';
   if (error?.code === 'permission-denied') return 'No tienes permisos para procesar este documento. Verifica las reglas de Firestore.';
   if (error?.code === 'failed-precondition') return 'La operación no se pudo completar por un conflicto de datos. Intenta nuevamente.';
   if (error?.code === 'aborted') return 'La transacción fue interrumpida por concurrencia. Reintenta en unos segundos.';
@@ -42,7 +49,12 @@ const resolverMensajeErrorFacturacion = (error) => {
   return 'No se pudo procesar el documento. Intenta nuevamente.';
 };
 
-export default function ModuloFacturacion({ registrarHistorial, usuarioActual = '' }) {
+export default function ModuloFacturacion({
+  registrarHistorial,
+  usuarioActual = '',
+  cotizacionOrigen = null,
+  onCotizacionProcesada
+}) {
   const [inventario, setInventario] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [busqueda, setBusqueda] = useState('');
@@ -60,6 +72,9 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
   const [numDoc, setNumDoc] = useState(0);
   const [numDocEnProceso, setNumDocEnProceso] = useState('');
   const [procesando, setProcesando] = useState(false);
+  const [numeroFacturaFisica, setNumeroFacturaFisica] = useState('');
+  const [cotizacionActiva, setCotizacionActiva] = useState(null);
+  const [avisosCotizacion, setAvisosCotizacion] = useState([]);
 
   useEffect(() => {
     let activo = true;
@@ -91,6 +106,78 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
     cargarDatos();
     return () => { activo = false; };
   }, []);
+
+  // Convierte una cotización guardada en un documento editable dentro del carrito.
+  // Espera a que el inventario esté cargado para poder comparar precios y existencias.
+  useEffect(() => {
+    if (!cotizacionOrigen?.id) return;
+    if (cotizacionActiva?.id === cotizacionOrigen.id) return;
+    if (inventario.length === 0) return;
+
+    const avisos = [];
+    const itemsCotizados = Array.isArray(cotizacionOrigen.items) ? cotizacionOrigen.items : [];
+
+    const nuevoCarrito = itemsCotizados.map((item, indice) => {
+      const codigo = item.codigo || '';
+      const descripcion = item.desc || item.descripcion || 'Sin descripción';
+      const cantidad = Number(item.cant ?? item.cantVenta ?? 0) || 0;
+      const precioCotizado = normalizarMoneda(item.precio ?? item.precioSel ?? 0);
+      const repuesto = inventario.find((r) => r.id === item.idRepuesto)
+        || (codigo ? inventario.find((r) => r.codigo === codigo) : null);
+
+      if (!repuesto) {
+        avisos.push(`${codigo || descripcion}: ya no existe en inventario. Quítalo del documento o créalo de nuevo antes de facturar.`);
+        return {
+          id: item.idRepuesto || `no-disponible-${indice}`,
+          codigo,
+          descripcion,
+          alternateCode: (item.alternateCode || '').trim(),
+          usarCodigoAlterno: Boolean(item.usarCodigoAlterno),
+          cantidad: 0,
+          precioVerde: precioCotizado,
+          precioAmarillo: precioCotizado,
+          precioRojo: precioCotizado,
+          cantVenta: cantidad,
+          precioSel: precioCotizado,
+          noDisponible: true
+        };
+      }
+
+      const precios = preciosEstandar(repuesto).map(normalizarMoneda);
+      if (!precios.includes(precioCotizado)) {
+        avisos.push(`${repuesto.codigo}: se cotizó a C$ ${precioCotizado.toLocaleString('en-US', { minimumFractionDigits: 2 })} y hoy los precios de lista son V/A/R C$ ${precios.map((p) => p.toLocaleString('en-US', { minimumFractionDigits: 2 })).join(' / ')}. Se respeta el precio cotizado.`);
+      }
+
+      const stockActual = Number(repuesto.cantidad || 0);
+      if (stockActual <= 0) {
+        avisos.push(`${repuesto.codigo}: AGOTADO. Se cotizaron ${cantidad} und. y no queda ninguna en existencia. Quita el renglón o ingresa stock antes de facturar.`);
+      } else if (cantidad > stockActual) {
+        avisos.push(`${repuesto.codigo}: solo quedan ${stockActual} und. de las ${cantidad} cotizadas. Baja la cantidad o ingresa stock antes de facturar.`);
+      }
+
+      return {
+        ...repuesto,
+        alternateCode: (item.alternateCode || repuesto.alternateCode || '').trim(),
+        usarCodigoAlterno: Boolean(item.usarCodigoAlterno),
+        cantVenta: cantidad,
+        precioSel: precioCotizado
+      };
+    });
+
+    setTipoTransaccion('Factura');
+    setCarrito(nuevoCarrito);
+    setAvisosCotizacion(avisos);
+    setCotizacionActiva({ id: cotizacionOrigen.id, numeroDocumento: cotizacionOrigen.numeroDocumento || '' });
+    setClienteId(cotizacionOrigen.idCliente || '');
+    setClienteStr(cotizacionOrigen.cliente === 'Cliente Mostrador' ? '' : (cotizacionOrigen.cliente || ''));
+    setEmpresa(cotizacionOrigen.empresa || '');
+    setTelefono(cotizacionOrigen.telefono || '');
+    setRuc(cotizacionOrigen.ruc || '');
+    setNotas(cotizacionOrigen.notas || 'Entrega Inmediata');
+    setFormaPago(cotizacionOrigen.formaPago || 'Efectivo');
+    setAbonoInicial('0');
+    setNumeroFacturaFisica('');
+  }, [cotizacionOrigen, inventario, cotizacionActiva]);
 
   const formatoTelefono = (valor) => {
     let num = valor.replace(/\D/g, '');
@@ -141,15 +228,30 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
     )));
   };
 
+  const cancelarConversion = () => {
+    setCotizacionActiva(null);
+    setAvisosCotizacion([]);
+    setCarrito([]);
+    setClienteId('');
+    setClienteStr('');
+    setEmpresa('');
+    setTelefono('');
+    setRuc('');
+    setNumeroFacturaFisica('');
+    onCotizacionProcesada?.();
+  };
+
   const total = normalizarMoneda(carrito.reduce((sum, i) => sum + (i.cantVenta * i.precioSel), 0));
   const numFormateadoVista = numDocEnProceso || String(numDoc).padStart(5, '0');
-  const abonoInicialNum = formaPago === 'Credito' ? normalizarMoneda(abonoInicial === '' ? 0 : abonoInicial) : 0;
-  const hayErrorAbono = formaPago === 'Credito' && (
+  const aplicaCredito = formaPago === 'Credito' && tipoTransaccion === 'Factura';
+  const abonoInicialNum = aplicaCredito ? normalizarMoneda(abonoInicial === '' ? 0 : abonoInicial) : 0;
+  const hayErrorAbono = aplicaCredito && (
     Number.isNaN(abonoInicialNum) || abonoInicialNum < 0 || abonoInicialNum > total
   );
-  const saldoPendientePreview = formaPago === 'Credito' && !Number.isNaN(abonoInicialNum)
+  const saldoPendientePreview = aplicaCredito && !Number.isNaN(abonoInicialNum)
     ? normalizarMoneda(Math.max(0, total - abonoInicialNum))
     : 0;
+  const hayItemsNoDisponibles = carrito.some((item) => item.noDisponible);
 
   const procesar = async () => {
     if (procesando) return;
@@ -158,7 +260,9 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
     const nombreFinal = clienteStr || 'Cliente Mostrador';
     const fechaDocumento = new Date().toISOString();
     const totalDocumento = normalizarMoneda(total);
-    const esCredito = formaPago === 'Credito';
+    const esFactura = tipoTransaccion === 'Factura';
+    // Una cotización no genera cuenta por cobrar aunque la forma de pago sea crédito.
+    const esCredito = formaPago === 'Credito' && esFactura;
     let abonoInicialCalculado = 0;
     const cantidadesInvalidas = carrito.some((item) => !Number.isFinite(item.cantVenta) || item.cantVenta <= 0);
 
@@ -186,11 +290,11 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
       }
     }
 
-    const totalPagado = esCredito ? abonoInicialCalculado : totalDocumento;
+    const totalPagado = esFactura ? (esCredito ? abonoInicialCalculado : totalDocumento) : 0;
     const saldoPendiente = esCredito ? normalizarMoneda(totalDocumento - abonoInicialCalculado) : 0;
-    const estadoPago = esCredito
-      ? (saldoPendiente === 0 ? 'Saldado' : 'Pendiente')
-      : 'Pagado';
+    const estadoPago = !esFactura
+      ? 'N/A'
+      : (esCredito ? (saldoPendiente === 0 ? 'Saldado' : 'Pendiente') : 'Pagado');
     const historialAbonos = esCredito && abonoInicialCalculado > 0
       ? [{ fecha: fechaDocumento, monto: abonoInicialCalculado, tipo: 'Abono Inicial', nota: 'Registrado al emitir el documento' }]
       : [];
@@ -211,39 +315,73 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
     try {
       const resultado = await ejecutarTransaccionConReintento(() =>
         runTransaction(db, async (transaction) => {
+          // ---------- LECTURAS ----------
+          // Firestore exige que TODAS las lecturas de una transacción ocurran antes
+          // de cualquier escritura, por eso se resuelven primero y en bloque.
+          const esDocumentoCotizacion = tipoTransaccion === 'Cotización';
           const secuenciaRef = doc(db, "sistema", "secuencia");
-          const secuenciaSnap = await transaction.get(secuenciaRef);
-          const secuenciaActual = secuenciaSnap.exists() ? Number(secuenciaSnap.data().siguiente) || 1 : 1;
-          const numeroDocumento = String(secuenciaActual).padStart(5, '0');
-          const siguienteSecuencia = secuenciaActual + 1;
-          const stockActualizado = {};
 
-          if (tipoTransaccion === 'Factura') {
-            for (const item of carrito) {
-              const repuestoRef = doc(db, "repuestos", item.id);
-              const repuestoSnap = await transaction.get(repuestoRef);
+          let secuenciaActual = 0;
+          if (esDocumentoCotizacion) {
+            const secuenciaSnap = await transaction.get(secuenciaRef);
+            secuenciaActual = secuenciaSnap.exists() ? Number(secuenciaSnap.data().siguiente) || 1 : 1;
+          }
 
-              if (!repuestoSnap.exists()) {
-                const error = new Error(`El repuesto "${item.descripcion}" ya no existe en inventario.`);
-                error.code = 'stock-insuficiente';
-                throw error;
-              }
+          let cotizacionRef = null;
+          if (cotizacionActiva?.id) {
+            cotizacionRef = doc(db, "facturas", cotizacionActiva.id);
+            const cotizacionSnap = await transaction.get(cotizacionRef);
 
-              const cantidadDisponible = Number(repuestoSnap.data().cantidad || 0);
-              if (item.cantVenta > cantidadDisponible) {
-                const error = new Error(`Stock insuficiente para "${item.descripcion}". Disponible: ${cantidadDisponible}.`);
-                error.code = 'stock-insuficiente';
-                throw error;
-              }
+            if (!cotizacionSnap.exists()) {
+              const error = new Error('La cotización de origen ya no existe.');
+              error.code = 'cotizacion-invalida';
+              throw error;
+            }
 
-              const nuevoStock = Math.max(0, normalizarMoneda(cantidadDisponible - item.cantVenta));
-              stockActualizado[item.id] = nuevoStock;
-              transaction.update(repuestoRef, { cantidad: nuevoStock });
+            if (obtenerEstadoCotizacion(cotizacionSnap.data()) === ESTADO_COTIZACION.FACTURADA) {
+              const error = new Error('Esta cotización ya fue facturada. Actualiza el listado de cotizaciones.');
+              error.code = 'cotizacion-invalida';
+              throw error;
             }
           }
 
+          const lecturasStock = [];
+          if (!esDocumentoCotizacion) {
+            for (const item of carrito) {
+              const repuestoRef = doc(db, "repuestos", item.id);
+              lecturasStock.push({ item, repuestoRef, repuestoSnap: await transaction.get(repuestoRef) });
+            }
+          }
+
+          // ---------- VALIDACIÓN ----------
+          const stockActualizado = {};
+          for (const { item, repuestoSnap } of lecturasStock) {
+            if (!repuestoSnap.exists()) {
+              const error = new Error(`El repuesto "${item.descripcion}" ya no existe en inventario.`);
+              error.code = 'stock-insuficiente';
+              throw error;
+            }
+
+            const cantidadDisponible = Number(repuestoSnap.data().cantidad || 0);
+            if (item.cantVenta > cantidadDisponible) {
+              const error = new Error(`Stock insuficiente para "${item.descripcion}". Disponible: ${cantidadDisponible}.`);
+              error.code = 'stock-insuficiente';
+              throw error;
+            }
+
+            stockActualizado[item.id] = Math.max(0, normalizarMoneda(cantidadDisponible - item.cantVenta));
+          }
+
+          // ---------- ESCRITURAS ----------
+          for (const { item, repuestoRef } of lecturasStock) {
+            transaction.update(repuestoRef, { cantidad: stockActualizado[item.id] });
+          }
+
+          const numeroDocumento = esDocumentoCotizacion ? String(secuenciaActual).padStart(5, '0') : '';
+          const siguienteSecuencia = esDocumentoCotizacion ? secuenciaActual + 1 : 0;
           const facturaRef = doc(collection(db, "facturas"));
-          transaction.set(facturaRef, {
+
+          const documento = {
             idCliente: clienteId || '',
             cliente: nombreFinal,
             empresa: empresa || '',
@@ -252,7 +390,7 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
             notas: notas || '',
             usuarioCreador: usuarioActual || '',
             numeroDocumento,
-            secuenciaDocumento: secuenciaActual,
+            secuenciaDocumento: esDocumentoCotizacion ? secuenciaActual : 0,
             tipo: tipoTransaccion,
             total: totalDocumento,
             formaPago: formaPago,
@@ -263,8 +401,31 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
             historialAbonos: historialAbonos,
             fecha: fechaDocumento,
             items: itemsFactura
-          });
-          transaction.set(secuenciaRef, { siguiente: siguienteSecuencia }, { merge: true });
+          };
+
+          if (esDocumentoCotizacion) {
+            documento.estadoCotizacion = ESTADO_COTIZACION.ABIERTA;
+          } else {
+            // Número del talonario preimpreso. Es opcional y no se imprime:
+            // el papel ya trae su propia numeración registrada.
+            documento.numeroFactura = numeroFacturaFisica.trim();
+            documento.cotizacionId = cotizacionActiva?.id || '';
+            documento.numeroCotizacion = cotizacionActiva?.numeroDocumento || '';
+          }
+
+          transaction.set(facturaRef, documento);
+
+          if (esDocumentoCotizacion) {
+            transaction.set(secuenciaRef, { siguiente: siguienteSecuencia }, { merge: true });
+          }
+
+          if (cotizacionRef) {
+            transaction.update(cotizacionRef, {
+              estadoCotizacion: ESTADO_COTIZACION.FACTURADA,
+              facturaId: facturaRef.id,
+              fechaFacturacion: fechaDocumento
+            });
+          }
 
           return {
             numeroDocumento,
@@ -277,15 +438,22 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
       setNumDocEnProceso(resultado.numeroDocumento);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
+      const referenciaDocumento = tipoTransaccion === 'Cotización'
+        ? `Cotización #${resultado.numeroDocumento}`
+        : `Factura${numeroFacturaFisica.trim() ? ` N° ${numeroFacturaFisica.trim()}` : ''}`;
+      const origenTexto = cotizacionActiva?.id
+        ? ` (desde cotización #${cotizacionActiva.numeroDocumento || 's/n'})`
+        : '';
+
       try {
-        await registrarHistorial(tipoTransaccion, `${tipoTransaccion} #${resultado.numeroDocumento} a ${nombreFinal} por C$${totalDocumento.toLocaleString('en-US')}`);
+        await registrarHistorial(tipoTransaccion, `${referenciaDocumento} a ${nombreFinal} por C$${totalDocumento.toLocaleString('en-US')}${origenTexto}`);
       } catch (errorHistorial) {
         console.error('No se pudo registrar el historial del documento:', errorHistorial);
       }
 
       if (tipoTransaccion === 'Factura') actualizarInventarioLocal(resultado.stockActualizado);
       window.print();
-      setNumDoc(resultado.siguienteSecuencia);
+      if (resultado.siguienteSecuencia) setNumDoc(resultado.siguienteSecuencia);
       setCarrito([]);
       setClienteId('');
       setClienteStr('');
@@ -294,6 +462,10 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
       setRuc('');
       setAbonoInicial('0');
       setNumDocEnProceso('');
+      setNumeroFacturaFisica('');
+      setCotizacionActiva(null);
+      setAvisosCotizacion([]);
+      onCotizacionProcesada?.();
     } catch (error) {
       setNumDocEnProceso('');
       alert(`❌ ${resolverMensajeErrorFacturacion(error)}`);
@@ -302,19 +474,23 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
     }
   };
 
+  // En Factura solo se ofrece lo que tiene existencias. En Cotización se puede
+  // cotizar cualquier repuesto del catálogo, aunque esté en cero.
+  const textoBusqueda = busqueda.toLowerCase();
   const disponibles = inventario.filter(i =>
-    i.cantidad > 0 &&
+    (tipoTransaccion !== 'Factura' || Number(i.cantidad) > 0) &&
     (
-      i.codigo.toLowerCase().includes(busqueda.toLowerCase()) ||
-      i.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      (i.alternateCode || '').toLowerCase().includes(busqueda.toLowerCase())
+      (i.codigo || '').toLowerCase().includes(textoBusqueda) ||
+      (i.descripcion || '').toLowerCase().includes(textoBusqueda) ||
+      (i.alternateCode || '').toLowerCase().includes(textoBusqueda)
     )
   );
 
   const hayErrorDeStock = tipoTransaccion === 'Factura' && carrito.some(item => item.cantVenta > item.cantidad);
   const documentoParaImpresion = {
     tipo: tipoTransaccion,
-    numeroDocumento: numFormateadoVista,
+    numeroDocumento: tipoTransaccion === 'Cotización' ? numFormateadoVista : '',
+    numeroFactura: numeroFacturaFisica.trim(),
     fecha: new Date().toISOString(),
     idCliente: clienteId || '',
     formaPago,
@@ -348,7 +524,7 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
           <div className="overflow-y-auto pr-1 space-y-2 max-h-[320px] lg:max-h-[420px] xl:max-h-[560px]">
             {disponibles.map(item => (
               <div key={item.id} className="p-3 border rounded-lg bg-slate-50 flex justify-between items-center hover:border-emerald-300 transition-colors">
-                <div><p className="font-bold text-sm text-slate-800">{item.codigo}</p><p className="text-xs text-slate-500 truncate max-w-[11rem] sm:max-w-none" title={item.descripcion}>{item.descripcion}</p><p className="text-xs font-bold text-emerald-600">Stock: {item.cantidad} <span className="text-[10px] text-slate-400 ml-1">({item.localidad})</span></p></div>
+                <div><p className="font-bold text-sm text-slate-800">{item.codigo}</p><p className="text-xs text-slate-500 truncate max-w-[11rem] sm:max-w-none" title={item.descripcion}>{item.descripcion}</p><p className={`text-xs font-bold ${Number(item.cantidad) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>Stock: {item.cantidad || 0} <span className="text-[10px] text-slate-400 ml-1">({item.localidad})</span></p></div>
                 <button
                   onClick={() => agregar(item)}
                   disabled={procesando}
@@ -364,18 +540,70 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
 
         <div className="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border-t-4 border-slate-800">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6 border-b pb-4 shrink-0">
-            <h2 className="text-2xl font-bold flex items-center">Documento Comercial <span className="ml-4 text-lg font-medium bg-slate-100 px-3 py-1 rounded-md border text-slate-600">#{numFormateadoVista}</span></h2>
+            <h2 className="text-2xl font-bold flex items-center flex-wrap gap-x-3 gap-y-1">
+              Documento Comercial
+              {tipoTransaccion === 'Cotización' && (
+                <span className="text-lg font-medium bg-slate-100 px-3 py-1 rounded-md border text-slate-600">#{numFormateadoVista}</span>
+              )}
+            </h2>
             <div className="flex bg-slate-100 rounded-lg p-1 border border-slate-200">
               <button onClick={() => setTipoTransaccion('Cotización')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${tipoTransaccion === 'Cotización' ? 'bg-white shadow text-emerald-600' : 'text-slate-500'}`}>Cotización</button>
               <button onClick={() => setTipoTransaccion('Factura')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${tipoTransaccion === 'Factura' ? 'bg-slate-800 shadow text-white' : 'text-slate-500'}`}>Factura (Venta Real)</button>
             </div>
           </div>
           
+          {cotizacionActiva && (
+            <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <p className="text-sm font-black text-emerald-800 uppercase tracking-wide">
+                    Facturando cotización #{cotizacionActiva.numeroDocumento || 's/n'}
+                  </p>
+                  <p className="text-xs text-emerald-700">
+                    Se cargaron los productos y precios cotizados. Al procesar, la cotización queda marcada como facturada.
+                  </p>
+                </div>
+                <button
+                  onClick={cancelarConversion}
+                  disabled={procesando}
+                  className="inline-flex items-center justify-center gap-1 text-xs font-bold border border-emerald-300 bg-white text-emerald-700 px-3 py-2 rounded-lg hover:bg-emerald-100 disabled:opacity-50 shrink-0"
+                >
+                  <X size={14} /> Cancelar conversión
+                </button>
+              </div>
+
+              {avisosCotizacion.length > 0 && (
+                <ul className="mt-3 space-y-1.5 border-t border-emerald-200 pt-3">
+                  {avisosCotizacion.map((aviso, indice) => (
+                    <li key={indice} className="flex items-start gap-2 text-[11px] font-semibold text-amber-800">
+                      <AlertTriangle size={13} className="mt-0.5 shrink-0" /> <span>{aviso}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6 shrink-0">
             <div className="sm:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Nombre del Cliente</label><input type="text" list="cli-list" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500" value={clienteStr} onChange={e => seleccionarCliente(e.target.value)} placeholder="Escribe o elige de la lista..." /><datalist id="cli-list">{clientes.map(c => <option key={c.id} value={`${c.nombres} ${c.apellidos}`} />)}</datalist></div>
             <div className="sm:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Empresa</label><input type="text" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500" value={empresa} onChange={e => setEmpresa(e.target.value)} placeholder="Ej: Transportes S.A." /></div>
             <div className="sm:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">Teléfono</label><input type="text" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500 font-medium" value={telefono} onChange={e => setTelefono(formatoTelefono(e.target.value))} placeholder="+505 XXXX-XXXX" /></div>
             <div className="sm:col-span-2"><label className="block text-xs font-bold text-slate-500 mb-1">RUC</label><input type="text" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500 uppercase" value={ruc} onChange={e => setRuc(e.target.value)} placeholder="Ej: 0011402031003K" /></div>
+            {tipoTransaccion === 'Factura' && (
+              <div className="sm:col-span-2 xl:col-span-4">
+                <label className="block text-xs font-bold text-slate-500 mb-1">N° de Factura preimpresa (opcional)</label>
+                <input
+                  type="text"
+                  className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500 font-bold tracking-wide"
+                  value={numeroFacturaFisica}
+                  onChange={(e) => setNumeroFacturaFisica(e.target.value)}
+                  placeholder="Ej: 004512"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Solo para cruzar el registro con el talonario físico. No se imprime: el papel ya trae su numeración.
+                </p>
+              </div>
+            )}
             <div className="sm:col-span-2 xl:col-span-4">
               <label className="block text-xs font-bold text-slate-500 mb-1">Notas del Documento</label>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -435,7 +663,7 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
                         }}
                         className="w-full border rounded p-2 text-center outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                       />
-                      {item.cantVenta > item.cantidad && (
+                      {tipoTransaccion === 'Factura' && item.cantVenta > item.cantidad && (
                         <div className="text-red-500 text-[10px] font-bold mt-1 bg-red-50 p-1 rounded border border-red-100 text-center">
                           ⚠️ Stock: {item.cantidad || 0}
                         </div>
@@ -449,7 +677,7 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
                         onChange={(e) => setCarrito(carrito.map(i => i.id === item.id ? {...i, precioSel: Number(e.target.value)} : i))}
                         className="w-full border rounded p-2 outline-none bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        <option value={item.precioVerde}>V: C${item.precioVerde.toLocaleString('en-US')}</option>
+                        {!preciosEstandar(item).includes(Number(item.precioSel)) && <option value={item.precioSel}>Cotizado: C${Number(item.precioSel).toLocaleString('en-US')}</option>}<option value={item.precioVerde}>V: C${item.precioVerde.toLocaleString('en-US')}</option>
                         <option value={item.precioAmarillo}>A: C${item.precioAmarillo.toLocaleString('en-US')}</option>
                         <option value={item.precioRojo}>R: C${item.precioRojo.toLocaleString('en-US')}</option>
                       </select>
@@ -519,7 +747,7 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
                         }}
                         className="w-full border rounded p-1.5 text-center outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                       />
-                      {item.cantVenta > item.cantidad && (
+                      {tipoTransaccion === 'Factura' && item.cantVenta > item.cantidad && (
                         <div className="text-red-500 text-[10px] font-bold leading-tight mt-1 bg-red-50 p-1 rounded border border-red-100 text-center">
                           ⚠️ Stock: {item.cantidad || 0}
                         </div>
@@ -532,7 +760,7 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
                         onChange={(e) => setCarrito(carrito.map(i => i.id === item.id ? {...i, precioSel: Number(e.target.value)} : i))}
                         className="w-full border rounded p-1.5 outline-none bg-slate-50 cursor-pointer font-medium disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        <option value={item.precioVerde}>V: C${item.precioVerde.toLocaleString('en-US')}</option>
+                        {!preciosEstandar(item).includes(Number(item.precioSel)) && <option value={item.precioSel}>Cotizado: C${Number(item.precioSel).toLocaleString('en-US')}</option>}<option value={item.precioVerde}>V: C${item.precioVerde.toLocaleString('en-US')}</option>
                         <option value={item.precioAmarillo}>A: C${item.precioAmarillo.toLocaleString('en-US')}</option>
                         <option value={item.precioRojo}>R: C${item.precioRojo.toLocaleString('en-US')}</option>
                       </select>
@@ -564,7 +792,7 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
                   </select>
                 </div>
 
-                {formaPago === 'Credito' && (
+                {aplicaCredito && (
                   <div>
                     <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Abono Inicial (C$)</label>
                     <input
@@ -597,9 +825,9 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
           <div className="mt-4 flex justify-stretch sm:justify-end shrink-0">
             <button 
               onClick={procesar} 
-              disabled={carrito.length === 0 || hayErrorDeStock || hayErrorAbono || procesando} 
+              disabled={carrito.length === 0 || hayErrorDeStock || hayErrorAbono || hayItemsNoDisponibles || procesando} 
               className={`px-8 py-3.5 rounded-xl font-bold flex items-center justify-center shadow-lg transition-colors disabled:opacity-50 w-full sm:w-auto
-                ${(hayErrorDeStock || hayErrorAbono || procesando)
+                ${(hayErrorDeStock || hayErrorAbono || hayItemsNoDisponibles || procesando)
                   ? 'bg-slate-400 text-white cursor-not-allowed' 
                   : 'bg-slate-800 text-white hover:bg-slate-900'
                 }`}
@@ -607,11 +835,14 @@ export default function ModuloFacturacion({ registrarHistorial, usuarioActual = 
               <Printer className="mr-2" size={20} /> 
               {procesando
                 ? 'Procesando...'
-                : (hayErrorDeStock
-                  ? '⚠️ Corrige el stock para facturar'
-                  : (hayErrorAbono
-                    ? '⚠️ Corrige el abono inicial'
-                    : (tipoTransaccion === 'Factura' ? 'Procesar Venta e Imprimir' : 'Generar Cotización')
+                : (hayItemsNoDisponibles
+                  ? '⚠️ Quita los productos que ya no existen'
+                  : (hayErrorDeStock
+                    ? '⚠️ Corrige el stock para facturar'
+                    : (hayErrorAbono
+                      ? '⚠️ Corrige el abono inicial'
+                      : (tipoTransaccion === 'Factura' ? 'Procesar Venta e Imprimir' : 'Generar Cotización')
+                    )
                   )
                 )}
             </button>

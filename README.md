@@ -12,6 +12,7 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
 - Control de inventario por bodega.
 - Venta y cotización con catálogo dinámico.
 - Bloqueo de stock en factura (venta real) y advertencia en cotización.
+- Conversión de cotización a factura sin volver a cargar productos.
 - Gestión de créditos, abonos y saldo pendiente.
 - Historial operativo + KPIs por cliente.
 - Impresión comercial:
@@ -39,6 +40,14 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
   - Secuencia de documento en `sistema/secuencia`.
   - Crédito con `abonoInicial`, `totalPagado`, `saldoPendiente`, `historialAbonos`.
   - Selección de código a imprimir (`codigo` o `alternateCode`).
+  - La factura no consume correlativo: usa el talonario preimpreso del cliente y
+    guarda ese número en `numeroFactura` (campo opcional, no se imprime).
+- `Cotizaciones / Facturas`
+  - Listado separado por tipo, con buscador y filtro por estado.
+  - Botón `Facturar` en cotizaciones abiertas: carga la cotización en Facturación
+    respetando los precios cotizados y avisa si cambiaron precios o existencias.
+  - Una cotización facturada queda bloqueada y enlazada a su factura.
+  - Ver, imprimir y descargar en PDF cualquier documento.
 - `CRM`
   - Alta, edición y eliminación de clientes (delete solo admin).
 - `Historial / BI`
@@ -70,9 +79,13 @@ src/
     ModuloFacturacion.jsx
     ModuloCRM.jsx
     ModuloHistorial.jsx
+    ModuloDocumentos.jsx
+    ModalDocumento.jsx
     PlantillaDocumentoComercial.jsx
     PlantillaCotizacionComercial.jsx
     PlantillaDocumentoImpresion.jsx
+  utils/
+    documentos.js
 public/
   logo.jpg
   *.png (logos de marcas para cotización)
@@ -108,8 +121,14 @@ firestore.indexes.json
 ### `facturas/{id}`
 
 - `tipo: "Factura" | "Cotización"`
-- `numeroDocumento: string`
-- `secuenciaDocumento: number`
+- `numeroDocumento: string` (correlativo, solo cotizaciones; vacío en facturas)
+- `secuenciaDocumento: number` (0 en facturas)
+- `numeroFactura?: string` (número del talonario preimpreso, solo facturas)
+- `estadoCotizacion?: "Abierta" | "Facturada"` (solo cotizaciones)
+- `facturaId?: string` (factura generada desde esta cotización)
+- `fechaFacturacion?: string (ISO)`
+- `cotizacionId?: string` (cotización de la que nació esta factura)
+- `numeroCotizacion?: string`
 - `fecha: string (ISO)`
 - `idCliente?: string`
 - `cliente: string`
@@ -156,10 +175,16 @@ firestore.indexes.json
 
 - En `Factura`, no se permite vender por encima del stock disponible.
 - En `Cotización`, se permite cotizar sin afectar stock.
+- Las cotizaciones no generan cuenta por cobrar aunque su forma de pago sea crédito.
+- Solo se factura una vez cada cotización: la conversión valida el estado dentro de
+  la misma transacción que descuenta stock y crea la factura.
+- Al convertir se respetan los precios cotizados; los cambios de precio o de stock
+  se muestran como aviso, no se aplican solos.
 - Estado de crédito:
   - `Saldado` solo cuando `saldoPendiente === 0`.
   - `Pendiente` cuando `saldoPendiente > 0`.
-- Facturación crítica (secuencia + stock + documento) se ejecuta en transacción Firestore.
+- Facturación crítica (secuencia + stock + documento + cierre de cotización) se ejecuta
+  en una sola transacción Firestore, con todas las lecturas antes de las escrituras.
 
 ## Configuración local
 

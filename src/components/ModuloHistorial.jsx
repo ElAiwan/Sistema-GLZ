@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, runTransaction } from 'firebase/firestore';
 import { Clock, BarChart3, DollarSign, Package, AlertCircle, Printer } from 'lucide-react';
-import PlantillaDocumentoImpresion from './PlantillaDocumentoImpresion';
+import ModalDocumento from './ModalDocumento';
+import { normalizarDocumentoParaImpresion } from '../utils/documentos';
 
 const normalizarMoneda = (valor) => {
   const numero = Number(valor);
@@ -10,13 +11,16 @@ const normalizarMoneda = (valor) => {
   return Math.round((numero + Number.EPSILON) * 100) / 100;
 };
 
+const esCotizacion = (documento) => `${documento?.tipo || ''}`.toLowerCase().includes('cotiza');
 const esCredito = (factura) => factura?.formaPago === 'Credito';
+// Una cotización nunca es cuenta por cobrar: no hubo venta, no hay deuda que cobrar.
+const esCuentaPorCobrar = (factura) => !esCotizacion(factura) && esCredito(factura);
 const obtenerTotal = (factura) => normalizarMoneda(factura?.total || 0);
 const obtenerAbonoInicial = (factura) => normalizarMoneda(factura?.abonoInicial || 0);
 
 const obtenerTotalPagado = (factura) => {
   if (typeof factura?.totalPagado === 'number') return normalizarMoneda(factura.totalPagado);
-  if (esCredito(factura)) {
+  if (esCuentaPorCobrar(factura)) {
     if (factura?.estadoPago === 'Pagado' || factura?.estadoPago === 'Saldado') return obtenerTotal(factura);
     return obtenerAbonoInicial(factura);
   }
@@ -24,13 +28,13 @@ const obtenerTotalPagado = (factura) => {
 };
 
 const obtenerSaldoPendiente = (factura) => {
-  if (!esCredito(factura)) return 0;
+  if (!esCuentaPorCobrar(factura)) return 0;
   if (typeof factura?.saldoPendiente === 'number') return Math.max(0, normalizarMoneda(factura.saldoPendiente));
   return Math.max(0, normalizarMoneda(obtenerTotal(factura) - obtenerTotalPagado(factura)));
 };
 
 const obtenerEstadoCredito = (factura) => {
-  if (!esCredito(factura)) return '-';
+  if (!esCuentaPorCobrar(factura)) return '-';
   return obtenerSaldoPendiente(factura) === 0 ? 'Saldado' : 'Pendiente';
 };
 
@@ -49,47 +53,7 @@ const resolverMensajeErrorHistorial = (error) => {
   return 'Ocurrió un error al procesar la operación.';
 };
 
-const normalizarDocumentoParaImpresion = (factura) => {
-  const itemsNormalizados = Array.isArray(factura?.items)
-    ? factura.items.map((item, index) => {
-      const cantidad = normalizarMoneda(item?.cant ?? item?.cantidad ?? item?.cantVenta ?? 0);
-      const precio = normalizarMoneda(item?.precio ?? item?.precioSel ?? item?.precioUnitario ?? 0);
-      const subtotal = item?.subtotal != null
-        ? normalizarMoneda(item.subtotal)
-        : normalizarMoneda(cantidad * precio);
-
-      return {
-        id: item?.id || `${factura?.id || 'doc'}-item-${index}`,
-        codigo: item?.codigo || item?.cod || '',
-        alternateCode: item?.alternateCode || '',
-        usarCodigoAlterno: Boolean(item?.usarCodigoAlterno),
-        codigoImpresion: item?.codigoImpresion || '',
-        descripcion: item?.desc || item?.descripcion || 'Sin descripción',
-        cantVenta: cantidad,
-        precioSel: precio,
-        subtotal
-      };
-    })
-    : [];
-
-  const totalItems = normalizarMoneda(itemsNormalizados.reduce((sum, item) => sum + item.subtotal, 0));
-
-  return {
-    tipo: factura?.tipo || 'Factura',
-    numeroDocumento: factura?.numeroDocumento || '',
-    fecha: factura?.fecha || new Date().toISOString(),
-    idCliente: factura?.idCliente || factura?.clienteId || '',
-    formaPago: factura?.formaPago || 'Efectivo',
-    cliente: factura?.cliente || 'Cliente Mostrador',
-    empresa: factura?.empresa || '',
-    telefono: factura?.telefono || '',
-    ruc: factura?.ruc || '',
-    notas: factura?.notas || '',
-    usuarioCreador: factura?.usuarioCreador || factura?.usuario || factura?.creadoPor || '',
-    total: factura?.total != null ? normalizarMoneda(factura.total) : totalItems,
-    items: itemsNormalizados
-  };
-};
+// normalizarDocumentoParaImpresion vive ahora en src/utils/documentos.js
 
 export default function ModuloHistorial() {
   const [pestaña, setPestaña] = useState('general');
@@ -119,7 +83,10 @@ export default function ModuloHistorial() {
 
       setLogs(snapLogs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
       setFacturas(snapFac.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
-      setClientes(snapCli.docs.map(d => `${d.data().nombres} ${d.data().apellidos}`));
+      setClientes(snapCli.docs.map(d => ({
+        id: d.id,
+        nombre: `${d.data().nombres || ''} ${d.data().apellidos || ''}`.trim()
+      })));
       setErrorCarga('');
     } catch (error) {
       console.error('Error cargando historial/BI:', error);
@@ -224,12 +191,17 @@ export default function ModuloHistorial() {
   };
 
   // Cálculos de BI para el cliente seleccionado
-  const docsCliente = facturas.filter(f => f.cliente === clienteSel);
+  // El cruce se hace por idCliente para que renombrar un cliente no borre su
+  // historial. El match por nombre queda solo para documentos antiguos sin id.
+  const clienteActivo = clientes.find((c) => c.id === clienteSel) || null;
+  const docsCliente = clienteActivo
+    ? facturas.filter((f) => (f.idCliente ? f.idCliente === clienteActivo.id : f.cliente === clienteActivo.nombre))
+    : [];
   const totalComprado = docsCliente
     .filter(f => f.tipo === 'Factura')
     .reduce((sum, factura) => sum + obtenerTotal(factura), 0);
   const deudaPendiente = docsCliente
-    .filter(factura => esCredito(factura))
+    .filter(factura => esCuentaPorCobrar(factura))
     .reduce((sum, factura) => sum + obtenerSaldoPendiente(factura), 0);
   
   // Encontrar el producto más comprado
@@ -289,12 +261,12 @@ export default function ModuloHistorial() {
                 <label className="block text-xs text-slate-300 uppercase tracking-widest mb-2 font-bold">Seleccionar Cliente a Analizar</label>
                 <select value={clienteSel} onChange={e => setClienteSel(e.target.value)} className="w-full bg-slate-700 border-none outline-none p-3 rounded-lg text-white font-bold cursor-pointer appearance-none">
                   <option value="">-- Elige un cliente del CRM --</option>
-                  {clientes.map((c, i) => <option key={i} value={c}>{c}</option>)}
+                  {clientes.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                 </select>
               </div>
             </div>
 
-            {clienteSel ? (
+            {clienteActivo ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
                   <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm flex items-center"><div className="bg-green-100 p-3 rounded-full mr-4 text-green-600"><DollarSign size={24}/></div><div><p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Total Comprado</p><p className="text-2xl font-black text-slate-800">C$ {totalComprado.toLocaleString('en-US', {minimumFractionDigits:2})}</p></div></div>
@@ -320,14 +292,14 @@ export default function ModuloHistorial() {
 
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-[11px] font-bold">{factura.formaPago}</span>
-                        {esCredito(factura) ? (
+                        {esCuentaPorCobrar(factura) ? (
                           obtenerEstadoCredito(factura) === 'Pendiente'
                             ? <button onClick={() => abrirModalAbono(factura)} className="bg-red-100 text-red-600 px-2.5 py-1 rounded-full text-[11px] font-bold hover:bg-red-200">Pendiente (Abonar)</button>
                             : <span className="bg-green-100 text-green-700 px-2.5 py-1 rounded-full text-[11px] font-bold">Saldado</span>
                         ) : <span className="text-slate-400 text-[11px] font-semibold">Sin crédito</span>}
                       </div>
 
-                      {esCredito(factura) && (
+                      {esCuentaPorCobrar(factura) && (
                         <p className="text-[11px] text-slate-500 font-semibold">
                           Saldo: C$ {obtenerSaldoPendiente(factura).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </p>
@@ -352,12 +324,12 @@ export default function ModuloHistorial() {
                           <td className="p-3 font-medium">C$ {obtenerTotal(factura).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                           <td className="p-3 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{factura.formaPago}</span></td>
                           <td className="p-3 text-center">
-                            {esCredito(factura) ? (
+                            {esCuentaPorCobrar(factura) ? (
                               obtenerEstadoCredito(factura) === 'Pendiente' ? 
                                 <button onClick={() => abrirModalAbono(factura)} className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold hover:bg-red-200">Pendiente (Abonar)</button> : 
                                 <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Saldado</span>
                             ) : <span className="text-slate-300">-</span>}
-                            {esCredito(factura) && (
+                            {esCuentaPorCobrar(factura) && (
                               <p className="text-[10px] text-slate-500 font-semibold mt-1">
                                 Saldo: C$ {obtenerSaldoPendiente(factura).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                               </p>
@@ -381,34 +353,8 @@ export default function ModuloHistorial() {
         )}
       </div>
 
-      {modalDocumento.abierto && modalDocumento.factura && documentoSeleccionado && (
-        <div className="fixed inset-0 z-40 bg-slate-900/50 p-2 sm:p-4 flex items-center justify-center">
-          <div className="w-full max-w-6xl max-h-[95vh] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
-            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-800 text-white flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <div>
-                <h4 className="text-lg font-bold">Vista de Documento Comercial</h4>
-                <p className="text-xs text-slate-200">
-                  {documentoSeleccionado.tipo} {documentoSeleccionado.numeroDocumento ? `#${documentoSeleccionado.numeroDocumento}` : ''} • {documentoSeleccionado.cliente}
-                </p>
-              </div>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
-                <button onClick={() => window.print()} className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 text-white font-bold hover:bg-emerald-600 w-full sm:w-auto">
-                  <Printer size={16} /> Imprimir / Guardar PDF
-                </button>
-                <button onClick={cerrarModalDocumento} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 font-bold hover:bg-slate-100 w-full sm:w-auto">
-                  Cerrar
-                </button>
-              </div>
-            </div>
-
-            <div className="p-2 sm:p-4 bg-slate-100 flex-1 overflow-hidden">
-              <div className="h-full max-h-[65vh] sm:max-h-[70vh] overflow-auto border border-slate-300 rounded-lg bg-slate-300 p-3 sm:p-4">
-                <PlantillaDocumentoImpresion documento={documentoSeleccionado} />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* El modal del documento se monta fuera de este contenedor para que la impresión
+          no herede el print:hidden del panel. */}
 
       {modalAbono.abierto && modalAbono.factura && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 p-2 sm:p-4 flex items-center justify-center">
@@ -469,7 +415,7 @@ export default function ModuloHistorial() {
       )}
     </div>
     {modalDocumento.abierto && documentoSeleccionado && (
-      <PlantillaDocumentoImpresion documento={documentoSeleccionado} soloImpresion />
+      <ModalDocumento documento={documentoSeleccionado} onCerrar={cerrarModalDocumento} />
     )}
     </>
   );

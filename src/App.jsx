@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
-import { Package, FileText, Users, Clock, LogOut, Menu, X } from 'lucide-react';
+import { Package, FileText, Users, Clock, LogOut, Menu, X, ClipboardList } from 'lucide-react';
 
 import Login from './components/Login';
 import ModuloInventario from './components/ModuloInventario';
 import ModuloFacturacion from './components/ModuloFacturacion';
 import ModuloCRM from './components/ModuloCRM';
+import ModuloDocumentos from './components/ModuloDocumentos';
 import ModuloHistorial from './components/ModuloHistorial';
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
   const [nombreSeguro, setNombreSeguro] = useState(''); // Nuevo estado de seguridad
   const [cargandoAuth, setCargandoAuth] = useState(true);
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
+  const [cotizacionParaFacturar, setCotizacionParaFacturar] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -62,6 +64,7 @@ export default function App() {
   const opcionesNavegacion = [
     { id: 'inventario', etiqueta: 'Inventario', icono: Package, visible: true },
     { id: 'facturas', etiqueta: 'Facturación', icono: FileText, visible: true },
+    { id: 'documentos', etiqueta: 'Cotizaciones / Facturas', icono: ClipboardList, visible: true },
     { id: 'crm', etiqueta: 'Clientes', icono: Users, visible: true },
     { id: 'historial', etiqueta: 'Historial / BI', icono: Clock, visible: rol === 'admin' }
   ].filter((opcion) => opcion.visible);
@@ -69,6 +72,12 @@ export default function App() {
   const cambiarVista = (vista) => {
     setVistaActiva(vista);
     setMenuMovilAbierto(false);
+  };
+
+  // Lleva la cotización seleccionada al módulo de Facturación para convertirla en factura.
+  const facturarCotizacion = (cotizacion) => {
+    setCotizacionParaFacturar(cotizacion);
+    cambiarVista('facturas');
   };
 
   return (
@@ -149,7 +158,15 @@ export default function App() {
 
       <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 print:p-0 print:overflow-visible">
         {vistaActiva === 'inventario' && <ModuloInventario registrarHistorial={registrarHistorialGlobal} rol={rol} />}
-        {vistaActiva === 'facturas' && <ModuloFacturacion registrarHistorial={registrarHistorialGlobal} usuarioActual={nombreSeguro} />}
+        {vistaActiva === 'facturas' && (
+          <ModuloFacturacion
+            registrarHistorial={registrarHistorialGlobal}
+            usuarioActual={nombreSeguro}
+            cotizacionOrigen={cotizacionParaFacturar}
+            onCotizacionProcesada={() => setCotizacionParaFacturar(null)}
+          />
+        )}
+        {vistaActiva === 'documentos' && <ModuloDocumentos onFacturarCotizacion={facturarCotizacion} />}
         {vistaActiva === 'crm' && <ModuloCRM registrarHistorial={registrarHistorialGlobal} rol={rol} />}
         {vistaActiva === 'historial' && rol === 'admin' && <ModuloHistorial />}
       </div>

@@ -61,7 +61,8 @@ service cloud.firestore {
         && request.resource.data.formaPago is string
         && request.resource.data.items is list;
 
-      allow update: if isAdmin()
+      allow update: if (
+        isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "estadoPago",
           "totalPagado",
@@ -69,7 +70,19 @@ service cloud.firestore {
           "historialAbonos",
           "historialPagos",
           "abonoInicial"
-        ]);
+        ])
+      ) || (
+        // Marcar una cotización como facturada al convertirla en factura.
+        canOperate()
+        && resource.data.tipo in ["Cotización", "Cotizacion"]
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "estadoCotizacion",
+          "facturaId",
+          "fechaFacturacion"
+        ])
+        && request.resource.data.estadoCotizacion == "Facturada"
+        && request.resource.data.facturaId is string
+      );
 
       allow delete: if false;
     }
