@@ -105,6 +105,35 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /proveedores/{id} {
+      // Compras y gastos son solo de administración, igual que los costos.
+      allow read, create, update, delete: if isAdmin();
+    }
+
+    match /gastos/{id} {
+      allow read: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.tipo is string
+        && request.resource.data.fecha is string
+        && request.resource.data.total is number
+        && request.resource.data.total > 0
+        && request.resource.data.formaPago is string
+        && request.resource.data.items is list;
+
+      // Solo se pueden mover los campos de pago: abonar a un proveedor.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "estadoPago",
+          "totalPagado",
+          "saldoPendiente",
+          "historialAbonos",
+          "abonoInicial"
+        ]);
+
+      allow delete: if false;
+    }
+
     match /historial/{id} {
       allow read: if isAdmin();
       allow create: if canOperate();

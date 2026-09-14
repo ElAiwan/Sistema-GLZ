@@ -14,6 +14,8 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
 - Bloqueo de stock en factura (venta real) y advertencia en cotización.
 - Conversión de cotización a factura sin volver a cargar productos.
 - Gestión de créditos, abonos y saldo pendiente.
+- Compras a proveedores que ingresan mercadería a bodega.
+- Gastos operativos por categoría y cuentas por pagar.
 - Historial operativo + KPIs por cliente.
 - Impresión comercial:
   - Factura calibrada por coordenadas sobre formato físico.
@@ -50,6 +52,13 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
   - Ver, imprimir y descargar en PDF cualquier documento.
 - `CRM`
   - Alta, edición y eliminación de clientes (delete solo admin).
+- `Proveedores` (solo admin)
+  - Directorio de proveedores con contacto, RUC y dirección.
+- `Compras / Gastos` (solo admin)
+  - Compra de mercadería: suma existencias sin alterar el costo del repuesto,
+    que se sigue administrando desde Inventario.
+  - Gastos operativos por categoría (alquiler, servicios, planilla, etc.).
+  - Cuentas por pagar con abonos y saldo, espejo del crédito de ventas.
 - `Historial / BI`
   - Bitácora de eventos.
   - Análisis por cliente (total comprado, deuda, producto favorito).
@@ -80,12 +89,15 @@ src/
     ModuloCRM.jsx
     ModuloHistorial.jsx
     ModuloDocumentos.jsx
+    ModuloProveedores.jsx
+    ModuloGastos.jsx
     ModalDocumento.jsx
     PlantillaDocumentoComercial.jsx
     PlantillaCotizacionComercial.jsx
     PlantillaDocumentoImpresion.jsx
   utils/
     documentos.js
+    gastos.js
 public/
   logo.jpg
   *.png (logos de marcas para cotización)
@@ -155,6 +167,33 @@ firestore.indexes.json
   - `precio: number`
   - `subtotal: number`
 
+### `proveedores/{id}`
+
+- `nombre: string`
+- `contacto?: string`
+- `telefono?: string`
+- `correo?: string`
+- `ruc?: string`
+- `direccion?: string`
+- `notas?: string`
+
+### `gastos/{id}`
+
+- `tipo: "Compra" | "Gasto"`
+- `categoria: string` (`"Mercadería"` en compras)
+- `descripcion: string`
+- `idProveedor?: string`
+- `proveedor: string`
+- `numeroDocumento?: string` (documento del proveedor)
+- `fecha: string (ISO)`
+- `formaPago: string`
+- `total: number`
+- `estadoPago: "Pagado" | "Pendiente" | "Saldado"`
+- `abonoInicial`, `totalPagado`, `saldoPendiente`, `historialAbonos`
+- `items: Array<{idRepuesto, codigo, desc, cant, costo, subtotal}>` (vacío en gastos)
+- `notas?: string`
+- `usuarioCreador?: string`
+
 ### `sistema/secuencia`
 
 - `siguiente: number`
@@ -175,6 +214,8 @@ firestore.indexes.json
 
 - En `Factura`, no se permite vender por encima del stock disponible.
 - En `Cotización`, se permite cotizar sin afectar stock.
+- Una compra suma existencias pero nunca modifica el `costo` del repuesto.
+- Compras y gastos son exclusivos del rol admin, igual que los costos.
 - Las cotizaciones no generan cuenta por cobrar aunque su forma de pago sea crédito.
 - Solo se factura una vez cada cotización: la conversión valida el estado dentro de
   la misma transacción que descuenta stock y crea la factura.

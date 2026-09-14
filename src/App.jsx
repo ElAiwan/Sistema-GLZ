@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
-import { Package, FileText, Users, Clock, LogOut, Menu, X, ClipboardList } from 'lucide-react';
+import { Package, FileText, Users, Clock, LogOut, Menu, X, ClipboardList, Truck, Wallet } from 'lucide-react';
 
 import Login from './components/Login';
 import ModuloInventario from './components/ModuloInventario';
 import ModuloFacturacion from './components/ModuloFacturacion';
 import ModuloCRM from './components/ModuloCRM';
 import ModuloDocumentos from './components/ModuloDocumentos';
+import ModuloProveedores from './components/ModuloProveedores';
+import ModuloGastos from './components/ModuloGastos';
 import ModuloHistorial from './components/ModuloHistorial';
 
 export default function App() {
@@ -66,6 +68,8 @@ export default function App() {
     { id: 'facturas', etiqueta: 'Facturación', icono: FileText, visible: true },
     { id: 'documentos', etiqueta: 'Cotizaciones / Facturas', icono: ClipboardList, visible: true },
     { id: 'crm', etiqueta: 'Clientes', icono: Users, visible: true },
+    { id: 'proveedores', etiqueta: 'Proveedores', icono: Truck, visible: rol === 'admin' },
+    { id: 'gastos', etiqueta: 'Compras / Gastos', icono: Wallet, visible: rol === 'admin' },
     { id: 'historial', etiqueta: 'Historial / BI', icono: Clock, visible: rol === 'admin' }
   ].filter((opcion) => opcion.visible);
 
@@ -168,6 +172,8 @@ export default function App() {
         )}
         {vistaActiva === 'documentos' && <ModuloDocumentos onFacturarCotizacion={facturarCotizacion} />}
         {vistaActiva === 'crm' && <ModuloCRM registrarHistorial={registrarHistorialGlobal} rol={rol} />}
+        {vistaActiva === 'proveedores' && rol === 'admin' && <ModuloProveedores registrarHistorial={registrarHistorialGlobal} rol={rol} />}
+        {vistaActiva === 'gastos' && rol === 'admin' && <ModuloGastos registrarHistorial={registrarHistorialGlobal} usuarioActual={nombreSeguro} />}
         {vistaActiva === 'historial' && rol === 'admin' && <ModuloHistorial />}
       </div>
     </div>
