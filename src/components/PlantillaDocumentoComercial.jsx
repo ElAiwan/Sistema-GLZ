@@ -47,6 +47,13 @@ const fechaSegura = (fecha) => {
   return parsed;
 };
 
+// ---- Calibración de la tabla contra el talonario preimpreso ----
+// Medido sobre una impresión real: la banda azul de encabezados termina cerca
+// de los 9.8 cm y la zona rayada llega hasta unos 19.1 cm, donde empieza el
+// área de totales. Con estos valores caben unos 15 renglones.
+const TABLA_INICIO = '10.2cm';
+const FILA_ALTO = '0.60cm';
+
 const esCotizacion = (tipo) => {
   const normalizado = `${tipo || ''}`.toLowerCase();
   return normalizado.includes('cotización') || normalizado.includes('cotizacion');
@@ -118,7 +125,7 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
       <div className="absolute uppercase whitespace-nowrap overflow-hidden text-ellipsis" style={{ top: '6.5cm', right: '0.1cm', width: '6.5cm' }}>{ruc}</div>
       <div className="absolute uppercase whitespace-nowrap overflow-hidden text-ellipsis" style={{ top: '7.85cm', left: '4.6cm', width: '10.5cm' }}>{notas}</div>
 
-      <div className="absolute" style={{ top: '11.0cm', left: '1.1cm', width: '19.4cm' }}>
+      <div className="absolute" style={{ top: TABLA_INICIO, left: '1.1cm', width: '19.4cm' }}>
         <table className="text-[10px] leading-tight table-fixed border-collapse" style={{ width: '19.4cm' }}>
           <colgroup>
             <col style={{ width: '3.4cm' }} />
@@ -129,7 +136,7 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
           </colgroup>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id} style={{ height: '0.72cm' }}>
+              <tr key={item.id} style={{ height: FILA_ALTO }}>
                 <td className="align-top pr-[0.12cm] whitespace-nowrap overflow-hidden text-ellipsis">{item.codigo}</td>
                 <td className="align-top pr-[0.12cm] whitespace-nowrap overflow-hidden text-ellipsis" style={{ position: 'relative', left: '-1cm' }}>{item.descripcion}</td>
                 <td className="align-top text-center whitespace-nowrap" style={{ position: 'relative', left: '-0.7cm' }}>{formatearCantidad(item.cantidad)}</td>
