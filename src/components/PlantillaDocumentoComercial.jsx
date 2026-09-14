@@ -53,6 +53,10 @@ const fechaSegura = (fecha) => {
 // área de totales. Con estos valores caben unos 15 renglones.
 const TABLA_INICIO = '10.2cm';
 const FILA_ALTO = '0.60cm';
+// Estos dos son los que marcan dónde tiene que terminar la lista: el renglón
+// que los alcance se imprime encima. Bajarlos es lo que gana renglones.
+const AUTORIZADO_TOP = '20.35cm';
+const SUBTOTAL_TOP = '20.5cm';
 
 const esCotizacion = (tipo) => {
   const normalizado = `${tipo || ''}`.toLowerCase();
@@ -148,13 +152,13 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
         </table>
       </div>
 
-      <div className="absolute text-right font-bold" style={{ top: '20.0cm', left: '13.4cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
+      <div className="absolute text-right font-bold" style={{ top: SUBTOTAL_TOP, left: '13.4cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
       <div className="absolute text-right font-black text-sm" style={{ top: '21.2cm', left: '13.5cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
 
       <div className="absolute whitespace-nowrap" style={{ top: '20.55cm', left: '6.3cm', width: '3.5cm' }}>
         {fechaVencimientoTexto}
       </div>
-      <div className="absolute whitespace-nowrap" style={{ top: '19.8cm', left: '4.4cm', width: '4cm' }}>
+      <div className="absolute whitespace-nowrap" style={{ top: AUTORIZADO_TOP, left: '4.4cm', width: '4cm' }}>
         AZelaya
       </div>
     </div>
