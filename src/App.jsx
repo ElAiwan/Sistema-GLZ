@@ -121,7 +121,7 @@ export default function App() {
           menuMovilAbierto ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="p-6 border-b border-slate-800">
+        <div className="shrink-0 p-4 border-b border-slate-800">
           <div className="flex justify-end md:hidden mb-3">
             <button
               onClick={() => setMenuMovilAbierto(false)}
@@ -132,27 +132,27 @@ export default function App() {
             </button>
           </div>
           {/* Llama a la imagen desde la carpeta public */}
-          <img src="/logo.jpg" alt="GLZ Logo" className="w-full h-auto object-contain bg-white rounded-xl p-4 mb-4 shadow-sm" />
-          <span className="inline-block mt-2 text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded uppercase font-bold tracking-widest">
+          <img src="/logo.jpg" alt="GLZ Logo" className="w-full max-h-28 object-contain bg-white rounded-xl p-3 mb-3 shadow-sm" />
+          <span className="inline-block text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded uppercase font-bold tracking-widest">
             Perfil: {rol}
           </span>
         </div>
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1">
           {opcionesNavegacion.map((opcion) => {
             const Icono = opcion.icono;
             return (
               <button
                 key={opcion.id}
                 onClick={() => cambiarVista(opcion.id)}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg ${vistaActiva === opcion.id ? 'bg-emerald-600' : 'text-slate-400 hover:bg-slate-800'}`}
+                className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg text-left ${vistaActiva === opcion.id ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
               >
-                <Icono size={20} />
+                <Icono size={20} className="shrink-0" />
                 <span className="font-medium">{opcion.etiqueta}</span>
               </button>
             );
           })}
         </nav>
-        <div className="p-4 border-t border-slate-800 bg-slate-900">
+        <div className="shrink-0 p-3 border-t border-slate-800 bg-slate-900">
            <p className="text-xs text-emerald-400 mb-3 truncate font-bold text-center uppercase tracking-wider">
              {nombreSeguro}
            </p>

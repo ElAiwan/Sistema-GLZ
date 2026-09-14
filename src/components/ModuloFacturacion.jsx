@@ -526,12 +526,20 @@ export default function ModuloFacturacion({
           <div className="mb-4 flex items-center bg-slate-50 border rounded-lg p-2"><Search className="text-slate-400 mr-2" size={18} /><input type="text" placeholder="Buscar repuesto..." className="w-full outline-none bg-transparent text-sm" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} /></div>
           <div className="overflow-y-auto pr-1 space-y-2 max-h-[320px] lg:max-h-[420px] xl:max-h-[560px]">
             {disponibles.map(item => (
-              <div key={item.id} className="p-3 border rounded-lg bg-slate-50 flex justify-between items-center hover:border-emerald-300 transition-colors">
-                <div><p className="font-bold text-sm text-slate-800">{item.codigo}</p><p className="text-xs text-slate-500 truncate max-w-[11rem] sm:max-w-none" title={item.descripcion}>{item.descripcion}</p><p className={`text-xs font-bold ${Number(item.cantidad) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>Stock: {item.cantidad || 0} <span className="text-[10px] text-slate-400 ml-1">({item.localidad})</span></p></div>
+              <div key={item.id} className="p-3 border rounded-lg bg-slate-50 flex justify-between items-center gap-3 hover:border-emerald-300 transition-colors">
+                {/* min-w-0 es lo que permite que el texto se recorte en vez de
+                    empujar la fila y sacar el botón fuera del panel. */}
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-sm text-slate-800 truncate" title={item.codigo}>{item.codigo}</p>
+                  <p className="text-xs text-slate-500 truncate" title={item.descripcion}>{item.descripcion}</p>
+                  <p className={`text-xs font-bold truncate ${Number(item.cantidad) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    Stock: {item.cantidad || 0} <span className="text-[10px] text-slate-400 ml-1">({item.localidad})</span>
+                  </p>
+                </div>
                 <button
                   onClick={() => agregar(item)}
                   disabled={procesando}
-                  className="bg-emerald-100 text-emerald-700 w-8 h-8 rounded-full font-bold hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-emerald-100 text-emerald-700 w-8 h-8 shrink-0 rounded-full font-bold hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   +
                 </button>
@@ -635,9 +643,9 @@ export default function ModuloFacturacion({
               {carrito.map((item) => (
                 <div key={item.id} className="bg-white border border-slate-200 rounded-lg p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-bold text-sm text-slate-800">{resolverCodigoImpresion(item)}</p>
-                      <p className="text-xs text-slate-500">{item.descripcion}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-sm text-slate-800 break-words">{resolverCodigoImpresion(item)}</p>
+                      <p className="text-xs text-slate-500 break-words">{item.descripcion}</p>
                     </div>
                     <button
                       onClick={() => setCarrito(carrito.filter(i => i.id !== item.id))}
@@ -718,9 +726,9 @@ export default function ModuloFacturacion({
               <tbody>
                 {carrito.map(item => (
                   <tr key={item.id} className="border-b bg-white">
-                    <td className="p-3">
-                      <p className="font-bold">{resolverCodigoImpresion(item)}</p>
-                      <p className="text-xs text-slate-500">{item.descripcion}</p>
+                    <td className="p-3 max-w-[20rem]">
+                      <p className="font-bold break-words">{resolverCodigoImpresion(item)}</p>
+                      <p className="text-xs text-slate-500 break-words">{item.descripcion}</p>
                       <div className="mt-1">
                         <label className="text-[10px] font-bold text-slate-500 mr-1 uppercase">Imprimir:</label>
                         <select
