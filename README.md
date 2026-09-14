@@ -18,6 +18,7 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
 - Compras a proveedores que ingresan mercadería a bodega.
 - Gastos operativos por categoría y cuentas por pagar.
 - Historial operativo + KPIs por cliente.
+- Panel de dirección con ventas, márgenes y egresos, y descarga de reportes.
 - Impresión comercial:
   - Factura calibrada por coordenadas sobre formato físico.
   - Cotización moderna, multipágina y exportable a PDF desde el navegador.
@@ -63,6 +64,14 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
     que se sigue administrando desde Inventario.
   - Gastos operativos por categoría (alquiler, servicios, planilla, etc.).
   - Cuentas por pagar con abonos y saldo, espejo del crédito de ventas.
+- `Panel y reportes` (solo admin)
+  - Rangos: hoy, semana, mes, mes pasado, año y personalizado.
+  - Ventas, utilidad bruta, gastos, utilidad estimada, ticket promedio y
+    comparación contra el período anterior.
+  - Cartera por cobrar y por pagar, con consultas acotadas a los documentos
+    que tienen saldo.
+  - Gráfico de ventas contra egresos de los últimos seis meses, con su tabla.
+  - Descarga en CSV de ventas, productos vendidos, y compras y gastos.
 - `Historial / BI`
   - Bitácora de eventos.
   - Análisis por cliente (total comprado, deuda, producto favorito).
@@ -95,6 +104,7 @@ src/
     ModuloDocumentos.jsx
     ModuloProveedores.jsx
     ModuloGastos.jsx
+    ModuloReportes.jsx
     ModalDocumento.jsx
     PlantillaDocumentoComercial.jsx
     PlantillaCotizacionComercial.jsx
@@ -102,6 +112,7 @@ src/
   utils/
     documentos.js
     gastos.js
+    reportes.js
 public/
   logo.jpg
   *.png (logos de marcas para cotización)
@@ -169,6 +180,7 @@ firestore.indexes.json
   - `usarCodigoAlterno?: boolean`
   - `codigoImpresion?: string`
   - `desc/descripcion: string`
+  - `costo?: number` (costo al momento de la venta, para calcular margen real)
   - `cant: number`
   - `precio: number`
   - `subtotal: number`
@@ -220,6 +232,8 @@ firestore.indexes.json
 
 - En `Factura`, no se permite vender por encima del stock disponible.
 - En `Cotización`, se permite cotizar sin afectar stock.
+- El margen solo se calcula sobre facturas que guardaron el costo del momento.
+  Las emitidas antes de esa función se reportan como "sin costo registrado".
 - Un documento anulado deja de contar en los totales y en la deuda del cliente,
   y una cotización anulada ya no se puede facturar.
 - La anulación es de un solo sentido: las reglas impiden devolver un documento

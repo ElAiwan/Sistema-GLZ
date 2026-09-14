@@ -307,6 +307,9 @@ export default function ModuloFacturacion({
       desc: i.descripcion,
       cant: i.cantVenta,
       precio: normalizarMoneda(i.precioSel),
+      // Se guarda el costo del momento para poder calcular el margen real
+      // después, aunque el costo del repuesto cambie más adelante.
+      costo: normalizarMoneda(i.costo || 0),
       subtotal: normalizarMoneda(i.cantVenta * i.precioSel)
     }));
 
