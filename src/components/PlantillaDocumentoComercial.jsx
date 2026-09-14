@@ -55,7 +55,7 @@ const TABLA_INICIO = '10.2cm';
 const FILA_ALTO = '0.60cm';
 // Estos dos son los que marcan dónde tiene que terminar la lista: el renglón
 // que los alcance se imprime encima. Bajarlos es lo que gana renglones.
-const AUTORIZADO_TOP = '20.35cm';
+const AUTORIZADO_TOP = '19.85cm';
 const SUBTOTAL_TOP = '20.5cm';
 
 const esCotizacion = (tipo) => {
@@ -153,9 +153,9 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
       </div>
 
       <div className="absolute text-right font-bold" style={{ top: SUBTOTAL_TOP, left: '13.4cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
-      <div className="absolute text-right font-black text-sm" style={{ top: '21.2cm', left: '13.5cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
+      <div className="absolute text-right font-black text-sm" style={{ top: '21.4cm', left: '13.5cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
 
-      <div className="absolute whitespace-nowrap" style={{ top: '20.55cm', left: '6.3cm', width: '3.5cm' }}>
+      <div className="absolute whitespace-nowrap" style={{ top: '20.75cm', left: '6.3cm', width: '3.5cm' }}>
         {fechaVencimientoTexto}
       </div>
       <div className="absolute whitespace-nowrap" style={{ top: AUTORIZADO_TOP, left: '4.4cm', width: '4cm' }}>
