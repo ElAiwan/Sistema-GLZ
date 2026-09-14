@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, getDocs, doc, runTransaction } from 'firebase/firestore';
 import { Clock, BarChart3, DollarSign, Package, AlertCircle, Printer } from 'lucide-react';
 import ModalDocumento from './ModalDocumento';
-import { normalizarDocumentoParaImpresion } from '../utils/documentos';
+import { esAnulado, normalizarDocumentoParaImpresion } from '../utils/documentos';
 
 const normalizarMoneda = (valor) => {
   const numero = Number(valor);
@@ -14,7 +14,7 @@ const normalizarMoneda = (valor) => {
 const esCotizacion = (documento) => `${documento?.tipo || ''}`.toLowerCase().includes('cotiza');
 const esCredito = (factura) => factura?.formaPago === 'Credito';
 // Una cotización nunca es cuenta por cobrar: no hubo venta, no hay deuda que cobrar.
-const esCuentaPorCobrar = (factura) => !esCotizacion(factura) && esCredito(factura);
+const esCuentaPorCobrar = (factura) => !esCotizacion(factura) && !esAnulado(factura) && esCredito(factura);
 const obtenerTotal = (factura) => normalizarMoneda(factura?.total || 0);
 const obtenerAbonoInicial = (factura) => normalizarMoneda(factura?.abonoInicial || 0);
 
@@ -198,7 +198,7 @@ export default function ModuloHistorial() {
     ? facturas.filter((f) => (f.idCliente ? f.idCliente === clienteActivo.id : f.cliente === clienteActivo.nombre))
     : [];
   const totalComprado = docsCliente
-    .filter(f => f.tipo === 'Factura')
+    .filter(f => f.tipo === 'Factura' && !esAnulado(f))
     .reduce((sum, factura) => sum + obtenerTotal(factura), 0);
   const deudaPendiente = docsCliente
     .filter(factura => esCuentaPorCobrar(factura))
@@ -206,7 +206,7 @@ export default function ModuloHistorial() {
   
   // Encontrar el producto más comprado
   let contadorProd = {};
-  docsCliente.filter(f=>f.tipo==='Factura').forEach(f => {
+  docsCliente.filter(f => f.tipo === 'Factura' && !esAnulado(f)).forEach(f => {
     f.items?.forEach(i => { contadorProd[i.desc] = (contadorProd[i.desc] || 0) + i.cant; });
   });
   const prodEstrella = Object.keys(contadorProd).length > 0 ? Object.keys(contadorProd).reduce((a, b) => contadorProd[a] > contadorProd[b] ? a : b) : 'Ninguno aún';
@@ -320,7 +320,10 @@ export default function ModuloHistorial() {
                        docsCliente.map(factura => (
                         <tr key={factura.id} className="hover:bg-slate-50">
                           <td className="p-3 text-slate-500">{new Date(factura.fecha).toLocaleDateString()}</td>
-                          <td className="p-3 font-bold text-slate-700">{factura.tipo} {factura.numeroDocumento ? `#${factura.numeroDocumento}` : ''}</td>
+                          <td className="p-3 font-bold text-slate-700">
+                            {factura.tipo} {factura.numeroDocumento ? `#${factura.numeroDocumento}` : ''}
+                            {esAnulado(factura) && <span className="ml-2 bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-black uppercase">Anulada</span>}
+                          </td>
                           <td className="p-3 font-medium">C$ {obtenerTotal(factura).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                           <td className="p-3 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{factura.formaPago}</span></td>
                           <td className="p-3 text-center">

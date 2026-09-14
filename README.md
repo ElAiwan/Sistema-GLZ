@@ -13,6 +13,7 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
 - Venta y cotización con catálogo dinámico.
 - Bloqueo de stock en factura (venta real) y advertencia en cotización.
 - Conversión de cotización a factura sin volver a cargar productos.
+- Anulación de documentos con devolución de stock y rastro del motivo.
 - Gestión de créditos, abonos y saldo pendiente.
 - Compras a proveedores que ingresan mercadería a bodega.
 - Gastos operativos por categoría y cuentas por pagar.
@@ -50,6 +51,9 @@ Plataforma web para gestión comercial de GLZ: inventario, facturación/cotizaci
     respetando los precios cotizados y avisa si cambiaron precios o existencias.
   - Una cotización facturada queda bloqueada y enlazada a su factura.
   - Ver, imprimir y descargar en PDF cualquier documento.
+  - Anular factura o cotización (solo admin): devuelve el stock al inventario,
+    marca el documento, guarda el motivo y reabre la cotización de origen.
+    No borra nada y no se puede deshacer.
 - `CRM`
   - Alta, edición y eliminación de clientes (delete solo admin).
 - `Proveedores` (solo admin)
@@ -136,6 +140,8 @@ firestore.indexes.json
 - `numeroDocumento: string` (correlativo, solo cotizaciones; vacío en facturas)
 - `secuenciaDocumento: number` (0 en facturas)
 - `numeroFactura?: string` (número del talonario preimpreso, solo facturas)
+- `estadoDocumento?: "Vigente" | "Anulado"` (ausente = vigente)
+- `anulacion?: {fecha, usuario, motivo}`
 - `estadoCotizacion?: "Abierta" | "Facturada"` (solo cotizaciones)
 - `facturaId?: string` (factura generada desde esta cotización)
 - `fechaFacturacion?: string (ISO)`
@@ -214,6 +220,10 @@ firestore.indexes.json
 
 - En `Factura`, no se permite vender por encima del stock disponible.
 - En `Cotización`, se permite cotizar sin afectar stock.
+- Un documento anulado deja de contar en los totales y en la deuda del cliente,
+  y una cotización anulada ya no se puede facturar.
+- La anulación es de un solo sentido: las reglas impiden devolver un documento
+  anulado al estado vigente.
 - Una compra suma existencias pero nunca modifica el `costo` del repuesto.
 - Compras y gastos son exclusivos del rol admin, igual que los costos.
 - Las cotizaciones no generan cuenta por cobrar aunque su forma de pago sea crédito.

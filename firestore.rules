@@ -82,6 +82,29 @@ service cloud.firestore {
         ])
         && request.resource.data.estadoCotizacion == "Facturada"
         && request.resource.data.facturaId is string
+      ) || (
+        // Anular un documento. Solo admin y solo en un sentido: nunca se
+        // puede devolver un documento anulado al estado vigente.
+        isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "estadoDocumento",
+          "anulacion",
+          "saldoPendiente",
+          "estadoPago"
+        ])
+        && request.resource.data.estadoDocumento == "Anulado"
+        && request.resource.data.anulacion.motivo is string
+        && request.resource.data.saldoPendiente == 0
+      ) || (
+        // Reabrir la cotización cuya factura acaba de anularse.
+        isAdmin()
+        && resource.data.tipo in ["Cotización", "Cotizacion"]
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "estadoCotizacion",
+          "facturaId",
+          "fechaFacturacion"
+        ])
+        && request.resource.data.estadoCotizacion == "Abierta"
       );
 
       allow delete: if false;

@@ -1,5 +1,10 @@
 // Utilidades compartidas por Facturación, Historial y el módulo de Cotizaciones / Facturas.
 
+export const ESTADO_DOCUMENTO = {
+  VIGENTE: 'Vigente',
+  ANULADO: 'Anulado'
+};
+
 export const ESTADO_COTIZACION = {
   ABIERTA: 'Abierta',
   FACTURADA: 'Facturada'
@@ -13,6 +18,9 @@ export const normalizarMoneda = (valor) => {
 
 export const formatearMonto = (valor) =>
   normalizarMoneda(valor).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Los documentos anteriores a la anulación no traen el campo: se asumen vigentes.
+export const esAnulado = (documento) => documento?.estadoDocumento === ESTADO_DOCUMENTO.ANULADO;
 
 export const esCotizacion = (documentoOTipo) => {
   const tipo = typeof documentoOTipo === 'string' ? documentoOTipo : documentoOTipo?.tipo;
@@ -28,7 +36,9 @@ export const obtenerEstadoCotizacion = (documento) => {
 };
 
 export const cotizacionFacturable = (documento) =>
-  esCotizacion(documento) && obtenerEstadoCotizacion(documento) === ESTADO_COTIZACION.ABIERTA;
+  esCotizacion(documento)
+  && !esAnulado(documento)
+  && obtenerEstadoCotizacion(documento) === ESTADO_COTIZACION.ABIERTA;
 
 // Etiqueta corta para identificar un documento en pantalla.
 export const etiquetaDocumento = (documento) => {
@@ -109,6 +119,8 @@ export const normalizarDocumentoParaImpresion = (factura) => {
   return {
     id: factura?.id || '',
     tipo: factura?.tipo || 'Factura',
+    estadoDocumento: factura?.estadoDocumento || ESTADO_DOCUMENTO.VIGENTE,
+    anulacion: factura?.anulacion || null,
     numeroDocumento: factura?.numeroDocumento || '',
     numeroFactura: factura?.numeroFactura || '',
     fecha: factura?.fecha || new Date().toISOString(),

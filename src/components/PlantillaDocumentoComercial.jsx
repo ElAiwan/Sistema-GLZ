@@ -81,7 +81,24 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
           : "relative w-[21.59cm] h-[27.94cm] bg-white text-black text-xs font-mono shadow-md"
       }
     >
-      <style>{`@media print { @page { margin: 0; size: letter; } }`}</style>
+      <style>{`
+        @media print {
+          @page { margin: 0; size: letter; }
+          .sello-anulado {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
+
+      {documento?.estadoDocumento === 'Anulado' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <span className="sello-anulado border-[5px] border-red-600 text-red-600 text-5xl font-black tracking-[0.2em] px-10 py-4 -rotate-[18deg] opacity-80">
+            ANULADO
+          </span>
+        </div>
+      )}
+
 
       {esCotizacion(tipo) && (
         <div className="absolute font-bold text-lg text-center" style={{ top: '4.2cm', right: '1.9cm', width: '3.2cm' }}>

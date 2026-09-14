@@ -170,7 +170,14 @@ export default function App() {
             onCotizacionProcesada={() => setCotizacionParaFacturar(null)}
           />
         )}
-        {vistaActiva === 'documentos' && <ModuloDocumentos onFacturarCotizacion={facturarCotizacion} />}
+        {vistaActiva === 'documentos' && (
+          <ModuloDocumentos
+            onFacturarCotizacion={facturarCotizacion}
+            rol={rol}
+            usuarioActual={nombreSeguro}
+            registrarHistorial={registrarHistorialGlobal}
+          />
+        )}
         {vistaActiva === 'crm' && <ModuloCRM registrarHistorial={registrarHistorialGlobal} rol={rol} />}
         {vistaActiva === 'proveedores' && rol === 'admin' && <ModuloProveedores registrarHistorial={registrarHistorialGlobal} rol={rol} />}
         {vistaActiva === 'gastos' && rol === 'admin' && <ModuloGastos registrarHistorial={registrarHistorialGlobal} usuarioActual={nombreSeguro} />}

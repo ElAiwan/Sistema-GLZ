@@ -129,7 +129,15 @@ export default function PlantillaCotizacionComercial({ documento, soloImpresion 
         }
       `}</style>
 
-      <article className="cotizacion-hoja mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-4">
+      <article className="cotizacion-hoja relative mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-4">
+      {documento?.estadoDocumento === 'Anulado' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <span className="sello-anulado border-[5px] border-red-600 text-red-600 text-5xl font-black tracking-[0.2em] px-10 py-4 -rotate-[18deg] opacity-80">
+            ANULADO
+          </span>
+        </div>
+      )}
+
         <header className="border border-slate-300 rounded-lg overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-[1fr_1.2fr]">
             <div className="p-3 border-b md:border-b-0 md:border-r border-slate-300 flex flex-col justify-center">
