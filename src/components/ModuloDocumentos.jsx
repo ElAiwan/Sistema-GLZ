@@ -14,6 +14,7 @@ import {
   normalizarMoneda,
   obtenerEstadoCotizacion
 } from '../utils/documentos';
+import { TIPO_MOVIMIENTO, construirMovimiento, nuevoMovimientoRef } from '../utils/kardex';
 
 const LIMITE_DOCUMENTOS = 300;
 
@@ -169,12 +170,23 @@ export default function ModuloDocumentos({ onFacturarCotizacion, rol, usuarioAct
         let devueltos = 0;
         let faltantes = 0;
 
+        const textoAnulacion = `Anulación de factura${vigente.numeroFactura ? ` N° ${vigente.numeroFactura}` : ''} · ${vigente.cliente || ''}`;
         for (const { item, repuestoRef, repuestoSnap } of lecturas) {
           if (!repuestoSnap.exists()) { faltantes += 1; continue; }
           const actual = Number(repuestoSnap.data().cantidad || 0);
-          transaction.update(repuestoRef, {
-            cantidad: Math.max(0, normalizarMoneda(actual + Number(item.cant || 0)))
-          });
+          const devuelto = Math.max(0, normalizarMoneda(actual + Number(item.cant || 0)));
+          transaction.update(repuestoRef, { cantidad: devuelto });
+          // Kardex: la devolución queda enlazada a la factura anulada, con su motivo.
+          transaction.set(nuevoMovimientoRef(db), construirMovimiento({
+            idRepuesto: repuestoRef.id,
+            repuesto: repuestoSnap.data(),
+            tipo: TIPO_MOVIMIENTO.ANULACION,
+            stockAnterior: actual,
+            stockNuevo: devuelto,
+            referencia: { coleccion: 'facturas', id: objetivo.id, texto: textoAnulacion },
+            motivo,
+            usuario: usuarioActual
+          }));
           devueltos += 1;
         }
 

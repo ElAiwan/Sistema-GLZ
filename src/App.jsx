@@ -175,7 +175,7 @@ export default function App() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 print:p-0 print:overflow-visible">
-        {vistaActiva === 'inventario' && <ModuloInventario registrarHistorial={registrarHistorialGlobal} rol={rol} />}
+        {vistaActiva === 'inventario' && <ModuloInventario registrarHistorial={registrarHistorialGlobal} rol={rol} usuarioActual={nombreSeguro} />}
         {vistaActiva === 'facturas' && (
           <ModuloFacturacion
             registrarHistorial={registrarHistorialGlobal}

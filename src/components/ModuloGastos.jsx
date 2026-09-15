@@ -16,6 +16,7 @@ import {
   obtenerTotalPagadoEgreso,
   resolverMensajeErrorEgreso
 } from '../utils/gastos';
+import { TIPO_MOVIMIENTO, construirMovimiento, nuevoMovimientoRef } from '../utils/kardex';
 
 const LIMITE = 300;
 
@@ -252,6 +253,20 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
             }))
             : []
         });
+
+        // Kardex: una entrada por artículo, enlazada a la compra.
+        const textoCompra = `Compra a ${base.proveedor}${base.numeroDocumento ? ` · Doc ${base.numeroDocumento}` : ''}`;
+        for (const { item, ref, snap } of lecturas) {
+          transaction.set(nuevoMovimientoRef(db), construirMovimiento({
+            idRepuesto: ref.id,
+            repuesto: snap.data(),
+            tipo: TIPO_MOVIMIENTO.COMPRA,
+            stockAnterior: Number(snap.data().cantidad || 0),
+            stockNuevo: nuevosStocks[item.id],
+            referencia: { coleccion: 'gastos', id: egresoRef.id, texto: textoCompra },
+            usuario: usuarioActual
+          }));
+        }
       });
 
       try {

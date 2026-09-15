@@ -4,6 +4,7 @@ import { collection, getDocs, doc, getDoc, setDoc, runTransaction } from 'fireba
 import { Search, Trash2, Printer, X, AlertTriangle } from 'lucide-react';
 import PlantillaDocumentoImpresion from './PlantillaDocumentoImpresion';
 import { ESTADO_COTIZACION, obtenerEstadoCotizacion } from '../utils/documentos';
+import { TIPO_MOVIMIENTO, construirMovimiento, nuevoMovimientoRef } from '../utils/kardex';
 
 const NOTAS_SUGERIDAS = [
   'Entrega Inmediata',
@@ -417,6 +418,21 @@ export default function ModuloFacturacion({
           }
 
           transaction.set(facturaRef, documento);
+
+          // Kardex: una salida por artículo, enlazada a la factura. Las cotizaciones no
+          // leen stock, así que no generan movimientos.
+          const textoFactura = `Factura${numeroFacturaFisica.trim() ? ` N° ${numeroFacturaFisica.trim()}` : ''} · ${nombreFinal}`;
+          for (const { item, repuestoRef, repuestoSnap } of lecturasStock) {
+            transaction.set(nuevoMovimientoRef(db), construirMovimiento({
+              idRepuesto: repuestoRef.id,
+              repuesto: repuestoSnap.data(),
+              tipo: TIPO_MOVIMIENTO.VENTA,
+              stockAnterior: Number(repuestoSnap.data().cantidad || 0),
+              stockNuevo: stockActualizado[item.id],
+              referencia: { coleccion: 'facturas', id: facturaRef.id, texto: textoFactura },
+              usuario: usuarioActual
+            }));
+          }
 
           if (esDocumentoCotizacion) {
             transaction.set(secuenciaRef, { siguiente: siguienteSecuencia }, { merge: true });

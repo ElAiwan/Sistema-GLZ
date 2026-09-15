@@ -192,6 +192,38 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    function movimientoValido() {
+      let datos = request.resource.data;
+      return datos.tipo in [
+          "inicial", "venta", "compra", "anulacion", "ajuste",
+          "traslado-salida", "traslado-entrada", "baja"
+        ]
+        && datos.idRepuesto is string
+        && datos.idRepuesto.size() > 0
+        && datos.cantidad is number
+        && datos.stockAnterior is number
+        && datos.stockNuevo is number
+        && datos.usuario is string
+        && datos.fecha is string;
+    }
+
+    match /movimientos/{id} {
+      // Kardex: lo consulta el admin. El vendedor solo deja la salida de sus ventas.
+      allow read: if isAdmin();
+
+      allow create: if movimientoValido() && (
+        isAdmin()
+        || (
+          canOperate()
+          && request.resource.data.tipo == "venta"
+          && request.resource.data.cantidad < 0
+        )
+      );
+
+      // Un movimiento registrado no se corrige: se compensa con otro.
+      allow update, delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
