@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { auth } from '../firebase';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { Lock } from 'lucide-react';
+import { recibeCorreos } from '../utils/accesos';
 
 const ERRORES_RESET = {
   'auth/invalid-email': 'El correo no tiene un formato válido.',
@@ -34,6 +35,10 @@ export default function Login() {
     const correo = email.trim();
     if (!correo) {
       setError('Escriba su correo electrónico arriba y vuelva a tocar "¿Olvidó su contraseña?".');
+      return;
+    }
+    if (!recibeCorreos(correo)) {
+      setError('Este usuario no recibe correos. Pida al administrador que le cambie la contraseña.');
       return;
     }
 

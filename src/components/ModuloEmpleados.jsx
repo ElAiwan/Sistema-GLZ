@@ -3,6 +3,7 @@ import { auth, db } from '../firebase';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { Check, Edit2, Info, KeyRound, Search, UserCog, UserMinus, X } from 'lucide-react';
+import { recibeCorreos } from '../utils/accesos';
 
 // Los permisos viven en `roles/{correo}`. Las cuentas de Authentication (correo y
 // contraseña) se crean y se borran desde la consola: el plan Spark no tiene Functions.
@@ -181,7 +182,20 @@ export default function ModuloEmpleados({ registrarHistorial, correoActual }) {
     return (
       <div className={`flex gap-2 ${compacto ? 'justify-end' : 'justify-center'}`}>
         <button onClick={() => empezarEdicion(empleado)} className={`${base} text-blue-500 hover:bg-blue-100`} title="Editar nombre y perfil"><Edit2 size={16} /></button>
-        <button onClick={() => enviarCambioContrasena(empleado)} className={`${base} text-amber-600 hover:bg-amber-100`} title="Enviar correo para cambiar contraseña"><KeyRound size={16} /></button>
+        {recibeCorreos(empleado.id) ? (
+          <button onClick={() => enviarCambioContrasena(empleado)} className={`${base} text-amber-600 hover:bg-amber-100`} title="Enviar correo para cambiar contraseña"><KeyRound size={16} /></button>
+        ) : (
+          <button
+            onClick={() => window.alert(
+              `${empleado.id} es un usuario sin correo real, así que no se le puede mandar el enlace.\n\n` +
+              'Para cambiarle la contraseña: Firebase → Authentication → borrar su cuenta y crearla de nuevo con el mismo correo y la contraseña nueva. Su acceso y su historial se mantienen.'
+            )}
+            className={`${base} text-slate-300 hover:bg-slate-100`}
+            title="Cambiar contraseña desde Firebase"
+          >
+            <KeyRound size={16} />
+          </button>
+        )}
         <button onClick={() => quitarAcceso(empleado)} className={`${base} text-red-500 hover:bg-red-100`} title="Quitar acceso"><UserMinus size={16} /></button>
       </div>
     );
