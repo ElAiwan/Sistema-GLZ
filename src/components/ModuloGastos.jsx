@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { db } from '../firebase';
 import { collection, doc, getDocs, limit, orderBy, query, runTransaction } from 'firebase/firestore';
-import { ShoppingCart, Receipt, AlertCircle, Search, Trash2, Plus, RefreshCw, FileText } from 'lucide-react';
+import { ShoppingCart, Receipt, AlertCircle, Search, Trash2, Plus, RefreshCw, FileText, Ban } from 'lucide-react';
 import ModalComprobanteEgreso from './ModalComprobanteEgreso';
 import { normalizarMoneda, formatearMonto } from '../utils/documentos';
 import {
@@ -10,6 +10,7 @@ import {
   TIPO_EGRESO,
   esCompra,
   esCreditoEgreso,
+  esEgresoAnulado,
   etiquetaEgreso,
   obtenerEstadoEgreso,
   obtenerSaldoEgreso,
@@ -50,6 +51,10 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
   const [busqueda, setBusqueda] = useState('');
   const [comprobante, setComprobante] = useState(null);
   const [ultimoRegistroId, setUltimoRegistroId] = useState('');
+  const [modalAnular, setModalAnular] = useState(null);
+  const [motivoAnulacion, setMotivoAnulacion] = useState('');
+  const [errorAnulacion, setErrorAnulacion] = useState('');
+  const [anulando, setAnulando] = useState(false);
 
   // Formulario común
   const [proveedorStr, setProveedorStr] = useState('');
@@ -358,6 +363,109 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
     }
   };
 
+  // ---------- Anulación ----------
+  // Una sola vía, igual que las facturas. La compra devuelve lo que sumó al inventario; si parte
+  // de esa mercadería ya salió de bodega, no se anula hasta ajustar el inventario, para no dejar
+  // stock negativo ni un kardex que no cuadre.
+  const cerrarAnulacion = () => {
+    setModalAnular(null);
+    setMotivoAnulacion('');
+    setErrorAnulacion('');
+  };
+
+  const anularEgreso = async () => {
+    const objetivo = modalAnular;
+    const motivo = motivoAnulacion.trim();
+    if (!objetivo?.id) return;
+    if (motivo.length < 5) {
+      setErrorAnulacion('Escriba el motivo de la anulación (mínimo 5 caracteres).');
+      return;
+    }
+
+    setAnulando(true);
+    try {
+      const resultado = await runTransaction(db, async (transaction) => {
+        // ---------- LECTURAS ----------
+        const ref = doc(db, 'gastos', objetivo.id);
+        const snap = await transaction.get(ref);
+        if (!snap.exists()) lanzar('El registro ya no existe.', 'not-found');
+        const vigente = snap.data();
+        if (esEgresoAnulado(vigente)) lanzar('Este registro ya fue anulado.', 'datos-invalidos');
+
+        const compra = esCompra(vigente);
+        const items = compra && Array.isArray(vigente.items) ? vigente.items : [];
+        const lecturas = [];
+        for (const item of items) {
+          if (!item?.idRepuesto) continue;
+          const repuestoRef = doc(db, 'repuestos', item.idRepuesto);
+          lecturas.push({ item, repuestoRef, repuestoSnap: await transaction.get(repuestoRef) });
+        }
+
+        // ---------- VALIDACIÓN ----------
+        for (const { item, repuestoSnap } of lecturas) {
+          if (!repuestoSnap.exists()) continue;
+          const actual = Number(repuestoSnap.data().cantidad || 0);
+          if (actual < Number(item.cant || 0)) {
+            lanzar(`No se puede anular: esta compra ingresó ${item.cant} und. de ${item.codigo} y hoy solo hay ${actual}. Parte ya salió de bodega; ajuste el inventario antes de anular.`, 'datos-invalidos');
+          }
+        }
+
+        // ---------- ESCRITURAS ----------
+        const texto = `Anulación de compra a ${vigente.proveedor || 'proveedor'}${vigente.numeroDocumento ? ` · Doc ${vigente.numeroDocumento}` : ''}`;
+        let revertidos = 0;
+        let faltantes = 0;
+        for (const { item, repuestoRef, repuestoSnap } of lecturas) {
+          if (!repuestoSnap.exists()) { faltantes += 1; continue; }
+          const actual = Number(repuestoSnap.data().cantidad || 0);
+          const nuevo = normalizarMoneda(actual - Number(item.cant || 0));
+          transaction.update(repuestoRef, { cantidad: nuevo });
+          transaction.set(nuevoMovimientoRef(db), construirMovimiento({
+            idRepuesto: repuestoRef.id,
+            repuesto: repuestoSnap.data(),
+            tipo: TIPO_MOVIMIENTO.ANULACION_COMPRA,
+            stockAnterior: actual,
+            stockNuevo: nuevo,
+            referencia: { coleccion: 'gastos', id: objetivo.id, texto },
+            motivo,
+            usuario: usuarioActual
+          }));
+          revertidos += 1;
+        }
+
+        transaction.update(ref, {
+          estadoDocumento: 'Anulado',
+          anulacion: { fecha: new Date().toISOString(), usuario: usuarioActual || '', motivo },
+          saldoPendiente: 0,
+          estadoPago: 'Anulado'
+        });
+
+        return { compra, revertidos, faltantes };
+      });
+
+      try {
+        await registrarHistorial(
+          resultado.compra ? 'Compras' : 'Gastos',
+          `Anuló ${etiquetaEgreso(objetivo)} de ${objetivo.proveedor}. Motivo: ${motivo}`
+        );
+      } catch (errorHistorial) {
+        console.error('No se pudo registrar la anulación en el historial:', errorHistorial);
+      }
+
+      setError('');
+      setUltimoRegistroId('');
+      setAviso(resultado.compra
+        ? `Compra anulada. Se descontaron del inventario ${resultado.revertidos} repuesto(s)${resultado.faltantes ? ` (${resultado.faltantes} ya no existían)` : ''} y quedó registrado en el kardex.`
+        : 'Gasto anulado. Ya no cuenta en reportes ni en cuentas por pagar.');
+      cerrarAnulacion();
+      await cargarDatos();
+    } catch (errorAnular) {
+      console.error('Error anulando egreso:', errorAnular);
+      setErrorAnulacion(resolverMensajeErrorEgreso(errorAnular));
+    } finally {
+      setAnulando(false);
+    }
+  };
+
   // ---------- Listados ----------
   const listaFiltrada = useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -594,12 +702,12 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                     <th className="p-3 text-right">Total</th>
                     <th className="p-3 text-center">Pago</th>
                     <th className="p-3 text-center">Estado</th>
-                    <th className="p-3 text-center">Comprobante</th>
+                    <th className="p-3 text-center">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {listaFiltrada.map((e) => (
-                    <tr key={e.id} className="hover:bg-slate-50">
+                    <tr key={e.id} className={`hover:bg-slate-50 ${esEgresoAnulado(e) ? 'bg-slate-50/60 text-slate-400' : ''}`}>
                       <td className="p-3 text-slate-500 whitespace-nowrap">{formatearFecha(e.fecha)}</td>
                       <td className="p-3">
                         <p className="font-medium text-slate-700">{e.descripcion || e.categoria}</p>
@@ -609,7 +717,9 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                       <td className="p-3 text-right font-bold text-slate-700 whitespace-nowrap">C$ {formatearMonto(obtenerTotalEgreso(e))}</td>
                       <td className="p-3 text-center"><span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold">{e.formaPago}</span></td>
                       <td className="p-3 text-center">
-                        {esCreditoEgreso(e) ? (
+                        {esEgresoAnulado(e) ? (
+                          <span className="bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-xs font-bold" title={e.anulacion?.motivo ? `Motivo: ${e.anulacion.motivo}` : undefined}>Anulado</span>
+                        ) : esCreditoEgreso(e) ? (
                           obtenerEstadoEgreso(e) === 'Pendiente' ? (
                             <>
                               <button onClick={() => { setModalAbono({ abierto: true, egreso: e }); setMontoAbono(''); setNotaAbono(''); setErrorAbono(''); }} className="bg-red-100 text-red-600 px-3 py-1 rounded-full text-xs font-bold hover:bg-red-200">Pendiente (Abonar)</button>
@@ -622,6 +732,15 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                         <button onClick={() => setComprobante(e)} className="inline-flex items-center gap-1 text-slate-600 border border-slate-200 bg-white px-2.5 py-1 rounded-lg text-xs font-bold hover:bg-slate-100" title="Ver e imprimir comprobante">
                           <FileText size={14} /> Ver
                         </button>
+                        {!esEgresoAnulado(e) && (
+                          <button
+                            onClick={() => { setModalAnular(e); setMotivoAnulacion(''); setErrorAnulacion(''); }}
+                            className="ml-1.5 inline-flex items-center gap-1 text-red-600 border border-red-200 bg-white px-2.5 py-1 rounded-lg text-xs font-bold hover:bg-red-50"
+                            title={esCompra(e) ? 'Anular compra y descontar del inventario' : 'Anular gasto'}
+                          >
+                            <Ban size={14} /> Anular
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -639,6 +758,53 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
       </div>
 
       <ModalComprobanteEgreso egreso={comprobante} onCerrar={() => setComprobante(null)} />
+
+      {modalAnular && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 p-2 sm:p-4 flex items-center justify-center print:hidden">
+          <div className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-800 text-white flex justify-between items-center">
+              <h4 className="text-lg font-bold">Anular {esCompra(modalAnular) ? 'compra' : 'gasto'}</h4>
+              <button onClick={cerrarAnulacion} disabled={anulando} className="text-slate-200 hover:text-white font-bold text-xl leading-none disabled:opacity-50" aria-label="Cerrar">×</button>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Proveedor</p><p className="font-bold text-slate-700">{modalAnular.proveedor}</p></div>
+                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Documento</p><p className="font-bold text-slate-700">{etiquetaEgreso(modalAnular)}</p></div>
+                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Fecha</p><p className="font-bold text-slate-700">{formatearFecha(modalAnular.fecha)}</p></div>
+                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Total</p><p className="font-bold text-slate-700">C$ {formatearMonto(obtenerTotalEgreso(modalAnular))}</p></div>
+              </div>
+
+              <p className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                {esCompra(modalAnular)
+                  ? `Se descontarán del inventario los ${modalAnular.items?.length || 0} repuesto(s) que ingresó esta compra, y quedará registrado en el kardex. `
+                  : ''}
+                La anulación no se puede deshacer. El registro queda visible como anulado, pero deja de contar en reportes y en cuentas por pagar.
+              </p>
+
+              <div>
+                <label htmlFor="motivo-anulacion-egreso" className="block text-xs font-bold text-slate-500 mb-1 uppercase">Motivo</label>
+                <input
+                  id="motivo-anulacion-egreso"
+                  type="text"
+                  value={motivoAnulacion}
+                  onChange={(ev) => { setMotivoAnulacion(ev.target.value); setErrorAnulacion(''); }}
+                  maxLength={160}
+                  className="w-full border border-slate-300 p-3 rounded-lg outline-none focus:border-red-500"
+                  placeholder="Ej: el proveedor anuló la factura, se registró dos veces"
+                />
+              </div>
+
+              {errorAnulacion && <p className="text-sm text-red-600 font-semibold bg-red-50 border border-red-200 rounded-lg p-2">{errorAnulacion}</p>}
+            </div>
+
+            <div className="px-4 sm:px-6 py-4 border-t flex flex-col-reverse sm:flex-row justify-end gap-2 bg-slate-50">
+              <button onClick={cerrarAnulacion} disabled={anulando} className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 font-bold hover:bg-slate-100 disabled:opacity-50">Cancelar</button>
+              <button onClick={anularEgreso} disabled={anulando} className="px-4 py-2 rounded-lg bg-red-600 text-white font-bold hover:bg-red-700 disabled:opacity-50">{anulando ? 'Anulando...' : 'Anular definitivamente'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalAbono.abierto && modalAbono.egreso && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 p-2 sm:p-4 flex items-center justify-center print:hidden">

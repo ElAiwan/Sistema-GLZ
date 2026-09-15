@@ -27,6 +27,9 @@ export const esCompra = (egreso) => `${egreso?.tipo || ''}`.toLowerCase() === 'c
 
 export const esCreditoEgreso = (egreso) => egreso?.formaPago === 'Credito';
 
+// Anular es de una sola vía: el registro queda visible, pero no cuenta en reportes ni en cuentas por pagar.
+export const esEgresoAnulado = (egreso) => egreso?.estadoDocumento === 'Anulado';
+
 export const obtenerTotalEgreso = (egreso) => normalizarMoneda(egreso?.total || 0);
 
 export const obtenerTotalPagadoEgreso = (egreso) => {
@@ -42,6 +45,7 @@ export const obtenerSaldoEgreso = (egreso) => {
 };
 
 export const obtenerEstadoEgreso = (egreso) => {
+  if (esEgresoAnulado(egreso)) return 'Anulado';
   if (!esCreditoEgreso(egreso)) return 'Pagado';
   return obtenerSaldoEgreso(egreso) === 0 ? 'Saldado' : 'Pendiente';
 };

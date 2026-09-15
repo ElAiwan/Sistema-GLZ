@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, getDocs, doc, getDoc, setDoc, runTransaction } from 'firebase/firestore';
 import { Search, Trash2, Printer, X, AlertTriangle } from 'lucide-react';
 import PlantillaDocumentoImpresion from './PlantillaDocumentoImpresion';
-import { ESTADO_COTIZACION, obtenerEstadoCotizacion } from '../utils/documentos';
+import { ESTADO_COTIZACION, RENGLONES_TALONARIO, obtenerEstadoCotizacion } from '../utils/documentos';
 import { TIPO_MOVIMIENTO, construirMovimiento, nuevoMovimientoRef } from '../utils/kardex';
 
 const NOTAS_SUGERIDAS = [
@@ -253,6 +253,8 @@ export default function ModuloFacturacion({
     ? normalizarMoneda(Math.max(0, total - abonoInicialNum))
     : 0;
   const hayItemsNoDisponibles = carrito.some((item) => item.noDisponible);
+  // Solo la factura va al talonario; la cotización se imprime en hoja carta sin límite de renglones.
+  const excedeTalonario = tipoTransaccion === 'Factura' && carrito.length > RENGLONES_TALONARIO;
 
   const procesar = async () => {
     if (procesando) return;
@@ -853,6 +855,16 @@ export default function ModuloFacturacion({
             </div>
           </div>
           
+          {excedeTalonario && (
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs font-semibold text-amber-800">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <p>
+                Esta factura tiene <b>{carrito.length} artículos</b> y el talonario admite <b>{RENGLONES_TALONARIO} por hoja</b>.
+                Del artículo {RENGLONES_TALONARIO + 1} en adelante no se imprimen en el papel: divídala en dos facturas para no desperdiciar una hoja.
+              </p>
+            </div>
+          )}
+
           <div className="mt-4 flex justify-stretch sm:justify-end shrink-0">
             <button 
               onClick={procesar} 

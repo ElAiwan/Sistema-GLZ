@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, runTransaction } from 'firebase/firestore';
+import { collection, getDocs, doc, limit, orderBy, query, runTransaction, startAfter, where } from 'firebase/firestore';
 import { Clock, BarChart3, DollarSign, Package, AlertCircle, Printer } from 'lucide-react';
 import ModalDocumento from './ModalDocumento';
 import { esAnulado, normalizarDocumentoParaImpresion } from '../utils/documentos';
@@ -55,6 +55,9 @@ const resolverMensajeErrorHistorial = (error) => {
 
 // normalizarDocumentoParaImpresion vive ahora en src/utils/documentos.js
 
+// El historial crece con cada acción del sistema: se lee por páginas, de lo más nuevo a lo más viejo.
+const PAGINA_HISTORIAL = 200;
+
 export default function ModuloHistorial() {
   const [pestaña, setPestaña] = useState('general');
   const [logs, setLogs] = useState([]);
@@ -71,32 +74,86 @@ export default function ModuloHistorial() {
   const [errorCarga, setErrorCarga] = useState('');
   const [cargandoDatos, setCargandoDatos] = useState(false);
   const [guardandoAbono, setGuardandoAbono] = useState(false);
+  const [ultimoLog, setUltimoLog] = useState(null);
+  const [hayMasLogs, setHayMasLogs] = useState(false);
+  const [clientesCargados, setClientesCargados] = useState(false);
 
-  const cargarDatos = async () => {
+  // Antes se bajaban completas historial, facturas y clientes, y otra vez en cada cambio de
+  // pestaña. Ahora cada pestaña lee solo lo que muestra, y una sola vez.
+  const cargarHistorial = async (desde = null) => {
     setCargandoDatos(true);
     try {
-      const [snapLogs, snapFac, snapCli] = await Promise.all([
-        getDocs(collection(db, "historial")),
-        getDocs(collection(db, "facturas")),
-        getDocs(collection(db, "clientes"))
-      ]);
-
-      setLogs(snapLogs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
-      setFacturas(snapFac.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.fecha) - new Date(a.fecha)));
-      setClientes(snapCli.docs.map(d => ({
-        id: d.id,
-        nombre: `${d.data().nombres || ''} ${d.data().apellidos || ''}`.trim()
-      })));
+      const partes = [orderBy('fecha', 'desc')];
+      if (desde) partes.push(startAfter(desde));
+      partes.push(limit(PAGINA_HISTORIAL));
+      const snap = await getDocs(query(collection(db, 'historial'), ...partes));
+      const nuevos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setLogs((actuales) => (desde ? [...actuales, ...nuevos] : nuevos));
+      setUltimoLog(snap.docs[snap.docs.length - 1] || desde);
+      setHayMasLogs(snap.docs.length === PAGINA_HISTORIAL);
       setErrorCarga('');
     } catch (error) {
-      console.error('Error cargando historial/BI:', error);
+      console.error('Error cargando historial:', error);
       setErrorCarga(resolverMensajeErrorHistorial(error));
     } finally {
       setCargandoDatos(false);
     }
   };
 
-  useEffect(() => { cargarDatos(); }, [pestaña]);
+  const cargarClientes = async () => {
+    setCargandoDatos(true);
+    try {
+      const snap = await getDocs(collection(db, 'clientes'));
+      setClientes(snap.docs.map((d) => ({
+        id: d.id,
+        nombre: `${d.data().nombres || ''} ${d.data().apellidos || ''}`.trim()
+      })).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+      setClientesCargados(true);
+      setErrorCarga('');
+    } catch (error) {
+      console.error('Error cargando clientes:', error);
+      setErrorCarga(resolverMensajeErrorHistorial(error));
+    } finally {
+      setCargandoDatos(false);
+    }
+  };
+
+  // Solo los documentos del cliente elegido. Los antiguos sin idCliente se encuentran por
+  // nombre, igual que antes; el filtro de docsCliente descarta los que son de otro cliente.
+  const cargarFacturasCliente = async (cliente) => {
+    if (!cliente) {
+      setFacturas([]);
+      return;
+    }
+    setCargandoDatos(true);
+    try {
+      const [porId, porNombre] = await Promise.all([
+        getDocs(query(collection(db, 'facturas'), where('idCliente', '==', cliente.id))),
+        cliente.nombre
+          ? getDocs(query(collection(db, 'facturas'), where('cliente', '==', cliente.nombre)))
+          : Promise.resolve({ docs: [] })
+      ]);
+      const unicos = new Map();
+      [...porId.docs, ...porNombre.docs].forEach((d) => unicos.set(d.id, { id: d.id, ...d.data() }));
+      setFacturas([...unicos.values()].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+      setErrorCarga('');
+    } catch (error) {
+      console.error('Error cargando documentos del cliente:', error);
+      setErrorCarga(resolverMensajeErrorHistorial(error));
+    } finally {
+      setCargandoDatos(false);
+    }
+  };
+
+  useEffect(() => { cargarHistorial(); }, []);
+
+  useEffect(() => {
+    if (pestaña === 'bi' && !clientesCargados) cargarClientes();
+  }, [pestaña, clientesCargados]);
+
+  useEffect(() => {
+    cargarFacturasCliente(clientes.find((c) => c.id === clienteSel) || null);
+  }, [clienteSel, clientes]);
 
   const abrirModalAbono = (factura) => {
     setModalAbono({ abierto: true, factura });
@@ -181,7 +238,7 @@ export default function ModuloHistorial() {
 
         transaction.update(facturaRef, payload);
       });
-      await cargarDatos();
+      await cargarFacturasCliente(clientes.find((c) => c.id === clienteSel) || null);
       cerrarModalAbono();
     } catch (error) {
       setErrorAbono(resolverMensajeErrorHistorial(error));
@@ -251,6 +308,16 @@ export default function ModuloHistorial() {
               </li>
             ))}
           </ul>
+        )}
+        {pestaña === 'general' && hayMasLogs && !cargandoDatos && (
+          <div className="text-center mt-4">
+            <button onClick={() => cargarHistorial(ultimoLog)} className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-bold text-slate-600 hover:bg-slate-100">
+              Cargar actividad anterior
+            </button>
+          </div>
+        )}
+        {pestaña === 'general' && !hayMasLogs && logs.length > 0 && !cargandoDatos && (
+          <p className="text-center text-[11px] text-slate-400 mt-4">No hay más actividad registrada.</p>
         )}
 
         {/* PESTAÑA 2: BUSINESS INTELLIGENCE */}

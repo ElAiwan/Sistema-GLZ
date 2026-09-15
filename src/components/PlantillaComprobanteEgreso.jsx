@@ -2,6 +2,7 @@ import { formatearMonto, normalizarMoneda } from '../utils/documentos';
 import {
   codigoComprobante,
   esCompra,
+  esEgresoAnulado,
   esCreditoEgreso,
   obtenerEstadoEgreso,
   obtenerSaldoEgreso,
@@ -59,7 +60,14 @@ export default function PlantillaComprobanteEgreso({ egreso, soloImpresion = fal
         }
       `}</style>
 
-      <article className="mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-4">
+      <article className="relative mx-auto w-full max-w-[21.59cm] bg-white text-slate-800 border border-slate-300 shadow-sm p-4">
+        {esEgresoAnulado(egreso) && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <span className="border-[5px] border-red-600 text-red-600 text-5xl font-black tracking-[0.2em] px-10 py-4 -rotate-[18deg] opacity-80">
+              ANULADO
+            </span>
+          </div>
+        )}
         <header className="border border-slate-300 rounded-lg overflow-hidden grid grid-cols-1 sm:grid-cols-[1fr_auto]">
           <div className="p-3 flex items-center gap-3 border-b sm:border-b-0 sm:border-r border-slate-300">
             <img src="/logo.jpg" alt="GLZ" className="h-14 w-auto object-contain" />
@@ -76,6 +84,12 @@ export default function PlantillaComprobanteEgreso({ egreso, soloImpresion = fal
             <p className="text-[11px] text-slate-600 mt-0.5"><span className="font-bold">Fecha:</span> {formatearFecha(egreso?.fecha)}</p>
           </div>
         </header>
+
+        {esEgresoAnulado(egreso) && (
+          <p className="mt-3 border border-red-300 bg-red-50 text-red-700 rounded-lg px-3 py-2 text-xs">
+            <b>Anulado</b> el {formatearFecha(egreso?.anulacion?.fecha)} por {egreso?.anulacion?.usuario || '—'}. Motivo: {egreso?.anulacion?.motivo || '—'}
+          </p>
+        )}
 
         <section className="mt-3 border border-slate-300 rounded-lg overflow-hidden">
           <div className="px-3 py-1.5 bg-slate-800 text-white text-[10px] font-black uppercase tracking-wider">

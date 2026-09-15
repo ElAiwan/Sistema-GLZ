@@ -136,3 +136,7 @@ export const normalizarDocumentoParaImpresion = (factura) => {
     items: itemsNormalizados
   };
 };
+
+// Renglones que caben en una hoja del talonario preimpreso con FILA_ALTO = 0.60cm
+// (PlantillaDocumentoComercial.jsx). Verificado con impresión real: el artículo 17 se sale.
+export const RENGLONES_TALONARIO = 16;

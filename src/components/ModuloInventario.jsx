@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, doc, runTransaction, writeBatch } from 'firebase/firestore';
-import { Trash2, Search, Edit2, Check, X, MapPin, History, ArrowLeftRight } from 'lucide-react';
+import { collection, getDocs, doc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore';
+import { Trash2, Search, Edit2, Check, X, MapPin, History, ArrowLeftRight, BellRing, AlertTriangle } from 'lucide-react';
 import ModalMovimientos from './ModalMovimientos';
 import ModalTraslado from './ModalTraslado';
 import { normalizarMoneda } from '../utils/documentos';
@@ -9,9 +9,12 @@ import { TIPO_MOVIMIENTO, construirMovimiento, nuevoMovimientoRef } from '../uti
 
 const MOTIVO_MINIMO = 3;
 
+// Un repuesto sin mínimo (0) nunca avisa. Con mínimo, avisa al llegar a esa cantidad o menos.
+const esStockBajo = (item) => Number(item.stockMinimo || 0) > 0 && Number(item.cantidad || 0) <= Number(item.stockMinimo);
+
 export default function ModuloInventario({ registrarHistorial, rol, usuarioActual = '' }) {
   const [repuestos, setRepuestos] = useState([]);
-  const [nuevoRepuesto, setNuevoRepuesto] = useState({ codigo: '', alternateCode: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', localidad: 'Managua' });
+  const [nuevoRepuesto, setNuevoRepuesto] = useState({ codigo: '', alternateCode: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', stockMinimo: '', localidad: 'Managua' });
   const [busqueda, setBusqueda] = useState('');
   const [filtroBodega, setFiltroBodega] = useState('Todas');
   const [editandoId, setEditandoId] = useState(null);
@@ -19,6 +22,7 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
   const [motivoAjuste, setMotivoAjuste] = useState('');
   const [repuestoMovimientos, setRepuestoMovimientos] = useState(null);
   const [repuestoTraslado, setRepuestoTraslado] = useState(null);
+  const [soloStockBajo, setSoloStockBajo] = useState(false);
 
   const obtenerRepuestos = async () => {
     const snap = await getDocs(collection(db, "repuestos"));
@@ -50,7 +54,8 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
       alternateCode: (nuevoRepuesto.alternateCode || '').trim(),
       costo: Number(nuevoRepuesto.costo), precioVerde: Number(nuevoRepuesto.precioVerde),
       precioAmarillo: Number(nuevoRepuesto.precioAmarillo), precioRojo: Number(nuevoRepuesto.precioRojo),
-      cantidad: Number(nuevoRepuesto.cantidad)
+      cantidad: Number(nuevoRepuesto.cantidad),
+      stockMinimo: Math.max(0, Math.floor(Number(nuevoRepuesto.stockMinimo) || 0))
     };
 
     try {
@@ -69,7 +74,7 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
       }));
       await batch.commit();
       await registrarHistorial("Inventario", `Ingresó: ${nuevoRepuesto.codigo} - ${nuevoRepuesto.cantidad} und. en ${nuevoRepuesto.localidad}`);
-      setNuevoRepuesto({ codigo: '', alternateCode: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', localidad: 'Managua' });
+      setNuevoRepuesto({ codigo: '', alternateCode: '', descripcion: '', costo: '', precioVerde: '', precioAmarillo: '', precioRojo: '', cantidad: '', stockMinimo: '', localidad: 'Managua' });
       await obtenerRepuestos();
     } catch (error) {
       alert('❌ No se pudo guardar el repuesto. Intenta de nuevo.');
@@ -170,6 +175,28 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
     }
   };
 
+  const definirStockMinimo = async (item) => {
+    if (rol !== 'admin') return;
+    const respuesta = window.prompt(
+      `Stock mínimo para ${item.codigo} en ${item.localidad || 'Managua'}.\n\nCuando queden esa cantidad o menos, el repuesto aparece en "Stock bajo". Escriba 0 para no avisar.`,
+      String(item.stockMinimo || 0)
+    );
+    if (respuesta === null) return;
+    const minimo = Number(respuesta.trim());
+    if (!Number.isInteger(minimo) || minimo < 0) {
+      alert('El stock mínimo debe ser un número entero, 0 o mayor.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "repuestos", item.id), { stockMinimo: minimo });
+      await registrarHistorial("Inventario", `Definió stock mínimo de ${item.codigo} (${item.localidad || 'Managua'}) en ${minimo} und.`);
+      await obtenerRepuestos();
+    } catch (error) {
+      alert('❌ No se pudo guardar el stock mínimo.');
+      console.error('Error guardando stock mínimo:', error);
+    }
+  };
+
   const formatear = (num) => Number(num).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
   const filtrados = repuestos.filter(item =>
@@ -178,8 +205,11 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
       item.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
       (item.alternateCode || '').toLowerCase().includes(busqueda.toLowerCase())
     ) &&
-    (filtroBodega === 'Todas' || item.localidad === filtroBodega)
+    (filtroBodega === 'Todas' || item.localidad === filtroBodega) &&
+    (!soloStockBajo || esStockBajo(item))
   );
+
+  const cantidadStockBajo = repuestos.filter((item) => (filtroBodega === 'Todas' || item.localidad === filtroBodega) && esStockBajo(item)).length;
 
   const campoMotivo = (clases) => (
     <input
@@ -195,11 +225,20 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
     <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-slate-200">
       <div className="mb-6 border-b pb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-2xl font-bold text-slate-800">Gestión de Inventario</h2>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+        <button
+          onClick={() => setSoloStockBajo((actual) => !actual)}
+          className={`inline-flex items-center justify-center gap-1.5 text-sm font-bold rounded-lg px-3 py-2 border transition-colors ${soloStockBajo ? 'bg-amber-500 border-amber-500 text-white' : cantidadStockBajo > 0 ? 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50'}`}
+          title="Repuestos que llegaron a su stock mínimo"
+        >
+          <AlertTriangle size={15} /> Stock bajo ({cantidadStockBajo})
+        </button>
         <select value={filtroBodega} onChange={e => setFiltroBodega(e.target.value)} className="text-sm border border-slate-300 rounded-lg p-2 bg-slate-50 outline-none text-slate-600 font-medium w-full sm:w-auto">
           <option value="Todas">🌍 Ver Todas las Bodegas</option>
           <option value="Managua">📍 Solo Managua</option>
           <option value="Tecolostote">📍 Solo Tecolostote</option>
         </select>
+        </div>
       </div>
 
       {/* SEGURIDAD: Solo el Admin puede agregar repuestos nuevos */}
@@ -223,7 +262,10 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                 <option value="Managua">Managua</option><option value="Tecolostote">Tecolostote</option>
               </select>
             </div>
-            <div><label className="block text-xs font-bold text-slate-500 mb-1">Stock Inicial</label><input type="number" min="0" required value={nuevoRepuesto.cantidad} onChange={e => setNuevoRepuesto({...nuevoRepuesto, cantidad: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="block text-xs font-bold text-slate-500 mb-1">Stock Inicial</label><input type="number" min="0" required value={nuevoRepuesto.cantidad} onChange={e => setNuevoRepuesto({...nuevoRepuesto, cantidad: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 mb-1" title="Avisa en Stock bajo al llegar a esta cantidad">Stock mínimo</label><input type="number" min="0" step="1" value={nuevoRepuesto.stockMinimo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, stockMinimo: e.target.value})} placeholder="Opcional" className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
+            </div>
             <div><label className="block text-xs font-bold text-slate-500 mb-1">P/Unitario (Costo)</label><input type="number" step="0.01" required value={nuevoRepuesto.costo} onChange={e => setNuevoRepuesto({...nuevoRepuesto, costo: e.target.value})} className="w-full border p-2 rounded-lg outline-none focus:border-emerald-500" /></div>
             <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                <div><label className="block text-xs font-bold text-green-600 mb-1">P. Verde</label><input type="number" step="0.01" required value={nuevoRepuesto.precioVerde} onChange={e => setNuevoRepuesto({...nuevoRepuesto, precioVerde: e.target.value})} className="w-full border p-2 rounded-lg bg-green-50 outline-none" /></div>
@@ -250,8 +292,9 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                 <p className="text-xs text-slate-600 mt-1">{item.descripcion}</p>
                 <p className="text-xs text-slate-500 mt-1 flex items-center"><MapPin size={12} className="mr-1"/>{item.localidad || 'Managua'}</p>
               </div>
-              <span className={`text-sm font-black ${!item.cantidad ? 'text-red-500' : 'text-slate-800'}`}>
+              <span className={`text-sm font-black text-right ${!item.cantidad ? 'text-red-500' : esStockBajo(item) ? 'text-amber-600' : 'text-slate-800'}`}>
                 {item.cantidad || 0}
+                {esStockBajo(item) && <span className="block text-[10px] font-bold text-amber-700">Mín. {item.stockMinimo}</span>}
               </span>
             </div>
 
@@ -285,6 +328,7 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setRepuestoMovimientos(item)} className="text-slate-600 p-2 rounded bg-white border border-slate-200" title="Movimientos"><History size={16} /></button>
                     <button onClick={() => setRepuestoTraslado(item)} className="text-violet-600 p-2 rounded bg-white border border-slate-200" title="Trasladar a otra bodega"><ArrowLeftRight size={16} /></button>
+                    <button onClick={() => definirStockMinimo(item)} className="text-amber-600 p-2 rounded bg-white border border-slate-200" title="Definir stock mínimo"><BellRing size={16} /></button>
                     <button onClick={() => empezarAjuste(item)} className="text-blue-500 p-2 rounded bg-white border border-slate-200" title="Ajustar Stock"><Edit2 size={16} /></button>
                     <button onClick={() => eliminarRepuesto(item)} className="text-red-400 p-2 rounded bg-white border border-slate-200" title="Eliminar"><Trash2 size={16} /></button>
                   </div>
@@ -326,7 +370,12 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                       <div className="flex justify-center space-x-1"><button onClick={() => setCantidadEditada(Math.max(0, cantidadEditada - 1))} className="bg-slate-200 px-2 rounded font-bold">-</button><input type="number" value={cantidadEditada} onChange={(e) => setCantidadEditada(Number(e.target.value))} className="w-16 text-center border p-1" /><button onClick={() => setCantidadEditada(cantidadEditada + 1)} className="bg-slate-200 px-2 rounded font-bold">+</button></div>
                       {campoMotivo('w-44')}
                     </div>
-                  ) : (<span className={`font-bold ${!item.cantidad ? 'text-red-500' : 'text-slate-800'}`}>{item.cantidad || 0}</span>)}
+                  ) : (
+                    <span className={`font-bold ${!item.cantidad ? 'text-red-500' : esStockBajo(item) ? 'text-amber-600' : 'text-slate-800'}`}>
+                      {item.cantidad || 0}
+                      {esStockBajo(item) && <span className="block text-[10px] font-bold text-amber-700">Mín. {item.stockMinimo}</span>}
+                    </span>
+                  )}
                 </td>
                 <td className="p-3"><span className="flex items-center text-xs font-semibold text-slate-500"><MapPin size={14} className="mr-1"/>{item.localidad || 'Managua'}</span></td>
 
@@ -350,6 +399,7 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                         <>
                           <button onClick={() => setRepuestoMovimientos(item)} className="text-slate-600 p-1" title="Movimientos"><History size={18} /></button>
                           <button onClick={() => setRepuestoTraslado(item)} className="text-violet-600 p-1" title="Trasladar a otra bodega"><ArrowLeftRight size={18} /></button>
+                          <button onClick={() => definirStockMinimo(item)} className="text-amber-600 p-1" title="Definir stock mínimo"><BellRing size={18} /></button>
                           <button onClick={() => empezarAjuste(item)} className="text-blue-500 p-1" title="Ajustar Stock"><Edit2 size={18} /></button>
                           <button onClick={() => eliminarRepuesto(item)} className="text-red-400 p-1" title="Eliminar"><Trash2 size={18} /></button>
                         </>

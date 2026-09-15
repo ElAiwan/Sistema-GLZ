@@ -173,15 +173,32 @@ service cloud.firestore {
         && request.resource.data.formaPago is string
         && request.resource.data.items is list;
 
-      // Solo se pueden mover los campos de pago: abonar a un proveedor.
       allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          "estadoPago",
-          "totalPagado",
-          "saldoPendiente",
-          "historialAbonos",
-          "abonoInicial"
-        ]);
+        && resource.data.get("estadoDocumento", "") != "Anulado"
+        && (
+          (
+            // Abonar a un proveedor: solo se mueven los campos de pago.
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "estadoPago",
+              "totalPagado",
+              "saldoPendiente",
+              "historialAbonos",
+              "abonoInicial"
+            ])
+          ) || (
+            // Anular una compra o un gasto. Una sola vía, con motivo y sin saldo pendiente.
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "estadoDocumento",
+              "anulacion",
+              "saldoPendiente",
+              "estadoPago"
+            ])
+            && request.resource.data.estadoDocumento == "Anulado"
+            && request.resource.data.anulacion.motivo is string
+            && request.resource.data.anulacion.motivo.size() >= 5
+            && request.resource.data.saldoPendiente == 0
+          )
+        );
 
       allow delete: if false;
     }
@@ -195,7 +212,7 @@ service cloud.firestore {
     function movimientoValido() {
       let datos = request.resource.data;
       return datos.tipo in [
-          "inicial", "venta", "compra", "anulacion", "ajuste",
+          "inicial", "venta", "compra", "anulacion", "anulacion-compra", "ajuste",
           "traslado-salida", "traslado-entrada", "baja"
         ]
         && datos.idRepuesto is string

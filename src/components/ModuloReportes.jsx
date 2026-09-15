@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
-import { BarChart3, Download, RefreshCw, FileText, TrendingUp, TrendingDown } from 'lucide-react';
+import { BarChart3, Database, Download, RefreshCw, FileText, TrendingUp, TrendingDown } from 'lucide-react';
 import ModalReporte from './ModalReporte';
+import { generarRespaldo } from '../utils/respaldo';
 import { esAnulado, esCotizacion, formatearMonto, normalizarMoneda } from '../utils/documentos';
-import { esCompra, obtenerSaldoEgreso, obtenerTotalEgreso } from '../utils/gastos';
+import { esCompra, esEgresoAnulado, obtenerSaldoEgreso, obtenerTotalEgreso } from '../utils/gastos';
 import {
   RANGOS,
   calcularRango,
@@ -34,7 +35,7 @@ const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 const sumar = (lista, obtener) => normalizarMoneda(lista.reduce((total, item) => total + obtener(item), 0));
 
-export default function ModuloReportes() {
+export default function ModuloReportes({ registrarHistorial }) {
   const [rangoClave, setRangoClave] = useState('mes');
   const [desdeManual, setDesdeManual] = useState(hoyISO());
   const [hastaManual, setHastaManual] = useState(hoyISO());
@@ -47,6 +48,7 @@ export default function ModuloReportes() {
   const [mesActivo, setMesActivo] = useState(null);
   const [cuentasPorCobrar, setCuentasPorCobrar] = useState([]);
   const [reporteAbierto, setReporteAbierto] = useState(false);
+  const [respaldo, setRespaldo] = useState({ procesando: false, mensaje: '', error: '' });
 
   const rango = useMemo(
     () => calcularRango(rangoClave, desdeManual, hastaManual),
@@ -84,7 +86,7 @@ export default function ModuloReportes() {
       ]);
 
       setFacturas(snapFacturas.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setEgresos(snapEgresos.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setEgresos(snapEgresos.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => !esEgresoAnulado(e)));
 
       const pendientesVenta = snapCobrar.docs
         .map((d) => ({ id: d.id, ...d.data() }))
@@ -224,6 +226,26 @@ export default function ModuloReportes() {
       ['Fecha', 'Tipo', 'Categoría', 'Proveedor', 'N° Documento', 'Descripción', 'Forma de pago', 'Total', 'Saldo pendiente'],
       filas
     ));
+  };
+
+  const descargarRespaldo = async () => {
+    setRespaldo({ procesando: true, mensaje: '', error: '' });
+    try {
+      const resultado = await generarRespaldo(db);
+      setRespaldo({
+        procesando: false,
+        mensaje: `Respaldo descargado: ${resultado.nombreArchivo} (${resultado.totalDocumentos.toLocaleString('en-US')} registros, ${Math.max(1, Math.round(resultado.bytes / 1024)).toLocaleString('en-US')} KB). Guárdelo fuera de esta computadora, por ejemplo en Google Drive o una memoria USB.`,
+        error: ''
+      });
+      try {
+        await registrarHistorial?.('Respaldo', `Descargó un respaldo completo (${resultado.totalDocumentos} registros)`);
+      } catch (errorHistorial) {
+        console.error('No se pudo registrar el respaldo en el historial:', errorHistorial);
+      }
+    } catch (errorRespaldo) {
+      console.error('Error generando respaldo:', errorRespaldo);
+      setRespaldo({ procesando: false, mensaje: '', error: 'No se pudo generar el respaldo. Revise su conexión e intente de nuevo.' });
+    }
   };
 
   // ---------- Piezas ----------
@@ -459,6 +481,28 @@ export default function ModuloReportes() {
             <FileText size={16} /> Reporte PDF
           </button>
         </div>
+
+        <div className="mt-5 pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-700">Respaldo completo</p>
+            <p className="text-xs text-slate-500">
+              Descarga todos los datos del sistema en un solo archivo. El plan gratuito no guarda respaldos automáticos: conviene bajarlo cada semana y guardarlo fuera de esta computadora.
+            </p>
+          </div>
+          <button
+            onClick={descargarRespaldo}
+            disabled={respaldo.procesando}
+            className="inline-flex items-center justify-center gap-2 text-sm font-bold border border-slate-300 text-slate-700 px-4 py-2.5 rounded-lg hover:bg-slate-100 disabled:opacity-50 shrink-0"
+          >
+            <Database size={16} /> {respaldo.procesando ? 'Generando respaldo...' : 'Descargar respaldo'}
+          </button>
+        </div>
+        {respaldo.mensaje && (
+          <p className="mt-3 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg">{respaldo.mensaje}</p>
+        )}
+        {respaldo.error && (
+          <p className="mt-3 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{respaldo.error}</p>
+        )}
       </div>
     </div>
 

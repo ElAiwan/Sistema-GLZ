@@ -1,19 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { db, auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
 import { Package, FileText, Users, Clock, LogOut, Menu, X, ClipboardList, Truck, Wallet, BarChart3, UserCog, ShieldAlert } from 'lucide-react';
 
 import Login from './components/Login';
-import ModuloInventario from './components/ModuloInventario';
-import ModuloFacturacion from './components/ModuloFacturacion';
-import ModuloCRM from './components/ModuloCRM';
-import ModuloDocumentos from './components/ModuloDocumentos';
-import ModuloProveedores from './components/ModuloProveedores';
-import ModuloGastos from './components/ModuloGastos';
-import ModuloReportes from './components/ModuloReportes';
-import ModuloHistorial from './components/ModuloHistorial';
-import ModuloEmpleados from './components/ModuloEmpleados';
+
+// Cada módulo se descarga recién la primera vez que se abre: la carga inicial trae solo
+// el login, el menú y el módulo con el que se arranca.
+const ModuloInventario = lazy(() => import('./components/ModuloInventario'));
+const ModuloFacturacion = lazy(() => import('./components/ModuloFacturacion'));
+const ModuloCRM = lazy(() => import('./components/ModuloCRM'));
+const ModuloDocumentos = lazy(() => import('./components/ModuloDocumentos'));
+const ModuloProveedores = lazy(() => import('./components/ModuloProveedores'));
+const ModuloGastos = lazy(() => import('./components/ModuloGastos'));
+const ModuloReportes = lazy(() => import('./components/ModuloReportes'));
+const ModuloHistorial = lazy(() => import('./components/ModuloHistorial'));
+const ModuloEmpleados = lazy(() => import('./components/ModuloEmpleados'));
+
+function CargandoModulo() {
+  return <p className="text-sm font-semibold text-slate-400 p-6 print:hidden">Cargando módulo...</p>;
+}
 
 const ROLES_VALIDOS = ['admin', 'vendedor'];
 
@@ -175,6 +182,7 @@ export default function App() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 print:p-0 print:overflow-visible">
+        <Suspense fallback={<CargandoModulo />}>
         {vistaActiva === 'inventario' && <ModuloInventario registrarHistorial={registrarHistorialGlobal} rol={rol} usuarioActual={nombreSeguro} />}
         {vistaActiva === 'facturas' && (
           <ModuloFacturacion
@@ -195,11 +203,12 @@ export default function App() {
         {vistaActiva === 'crm' && <ModuloCRM registrarHistorial={registrarHistorialGlobal} rol={rol} />}
         {vistaActiva === 'proveedores' && rol === 'admin' && <ModuloProveedores registrarHistorial={registrarHistorialGlobal} rol={rol} />}
         {vistaActiva === 'gastos' && rol === 'admin' && <ModuloGastos registrarHistorial={registrarHistorialGlobal} usuarioActual={nombreSeguro} />}
-        {vistaActiva === 'reportes' && rol === 'admin' && <ModuloReportes />}
+        {vistaActiva === 'reportes' && rol === 'admin' && <ModuloReportes registrarHistorial={registrarHistorialGlobal} />}
         {vistaActiva === 'historial' && rol === 'admin' && <ModuloHistorial />}
         {vistaActiva === 'empleados' && rol === 'admin' && (
           <ModuloEmpleados registrarHistorial={registrarHistorialGlobal} correoActual={usuario.email} />
         )}
+        </Suspense>
       </div>
     </div>
   );
