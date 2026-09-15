@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
-import { BarChart3, Download, RefreshCw, Printer, TrendingUp, TrendingDown } from 'lucide-react';
+import { BarChart3, Download, RefreshCw, FileText, TrendingUp, TrendingDown } from 'lucide-react';
+import ModalReporte from './ModalReporte';
 import { esAnulado, esCotizacion, formatearMonto, normalizarMoneda } from '../utils/documentos';
 import { esCompra, obtenerSaldoEgreso, obtenerTotalEgreso } from '../utils/gastos';
 import {
@@ -12,6 +13,7 @@ import {
   dentroDe,
   descargarArchivo,
   etiquetaMes,
+  fechaArchivo,
   fechaCSV,
   montoCSV,
   rangoAnterior,
@@ -43,6 +45,8 @@ export default function ModuloReportes() {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [mesActivo, setMesActivo] = useState(null);
+  const [cuentasPorCobrar, setCuentasPorCobrar] = useState([]);
+  const [reporteAbierto, setReporteAbierto] = useState(false);
 
   const rango = useMemo(
     () => calcularRango(rangoClave, desdeManual, hastaManual),
@@ -85,6 +89,7 @@ export default function ModuloReportes() {
       const pendientesVenta = snapCobrar.docs
         .map((d) => ({ id: d.id, ...d.data() }))
         .filter((f) => !esCotizacion(f) && !esAnulado(f));
+      setCuentasPorCobrar(pendientesVenta);
       setPorCobrar(sumar(pendientesVenta, (f) => normalizarMoneda(f.saldoPendiente || 0)));
 
       const pendientesCompra = snapPagar.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -179,7 +184,7 @@ export default function ModuloReportes() {
     : serieMensual[serieMensual.length - 1];
 
   // ---------- Descargas ----------
-  const sufijo = `${fechaCSV(rango.desde.toISOString())}_a_${fechaCSV(rango.hasta.toISOString())}`;
+  const sufijo = `${fechaArchivo(rango.desde)}_a_${fechaArchivo(rango.hasta)}`;
 
   const descargarVentas = () => {
     const filas = actual.listaVentas.map((f) => [
@@ -233,7 +238,9 @@ export default function ModuloReportes() {
   const etiquetaRango = `${rango.desde.toLocaleDateString('es-NI')} — ${rango.hasta.toLocaleDateString('es-NI')}`;
 
   return (
-    <div className="space-y-6">
+    <>
+    {/* El panel no se imprime: al imprimir solo sale el reporte del modal. */}
+    <div className="space-y-6 print:hidden">
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 print:hidden">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b pb-4 mb-4">
           <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -436,7 +443,7 @@ export default function ModuloReportes() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 sm:p-6 print:hidden">
         <h3 className="text-lg font-bold text-slate-800 mb-1">Descargar</h3>
         <p className="text-xs text-slate-500 mb-4">
-          Los archivos salen en formato CSV y se abren directo en Excel. Incluyen solo el período analizado.
+          Los CSV se abren directo en Excel. El reporte PDF trae el resumen y los detalles que se marquen. Todo corresponde al período analizado.
         </p>
         <div className="flex flex-wrap gap-2">
           <button onClick={descargarVentas} className="inline-flex items-center gap-2 text-sm font-bold bg-slate-800 text-white px-4 py-2.5 rounded-lg hover:bg-slate-900">
@@ -448,11 +455,29 @@ export default function ModuloReportes() {
           <button onClick={descargarEgresos} className="inline-flex items-center gap-2 text-sm font-bold bg-slate-800 text-white px-4 py-2.5 rounded-lg hover:bg-slate-900">
             <Download size={16} /> Compras y gastos
           </button>
-          <button onClick={() => window.print()} className="inline-flex items-center gap-2 text-sm font-bold border border-slate-300 text-slate-700 px-4 py-2.5 rounded-lg hover:bg-slate-100">
-            <Printer size={16} /> Imprimir panel
+          <button onClick={() => setReporteAbierto(true)} className="inline-flex items-center gap-2 text-sm font-bold border border-slate-300 text-slate-700 px-4 py-2.5 rounded-lg hover:bg-slate-100">
+            <FileText size={16} /> Reporte PDF
           </button>
         </div>
       </div>
     </div>
+
+    {reporteAbierto && (
+      <ModalReporte
+        datos={{
+          rango,
+          etiquetaRango,
+          actual,
+          variacionVentas,
+          serieMensual,
+          topProductos,
+          porCobrar,
+          porPagar,
+          cuentasPorCobrar
+        }}
+        onCerrar={() => setReporteAbierto(false)}
+      />
+    )}
+    </>
   );
 }

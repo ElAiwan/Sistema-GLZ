@@ -118,3 +118,11 @@ export const fechaCSV = (iso) => {
   const fecha = new Date(iso);
   return Number.isNaN(fecha.getTime()) ? '' : fecha.toISOString().slice(0, 10);
 };
+
+// Fecha local AAAA-MM-DD para nombres de archivo. toISOString() pasa a UTC y en Nicaragua
+// (UTC-6) el final del día caería en la fecha siguiente.
+export const fechaArchivo = (valor) => {
+  const fecha = valor instanceof Date ? valor : new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return '';
+  return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${String(fecha.getDate()).padStart(2, '0')}`;
+};
