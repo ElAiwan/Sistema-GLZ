@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
-import { Package, FileText, Users, Clock, LogOut, Menu, X, ClipboardList, Truck, Wallet, BarChart3 } from 'lucide-react';
+import { Package, FileText, Users, Clock, LogOut, Menu, X, ClipboardList, Truck, Wallet, BarChart3, UserCog, ShieldAlert } from 'lucide-react';
 
 import Login from './components/Login';
 import ModuloInventario from './components/ModuloInventario';
@@ -13,38 +13,48 @@ import ModuloProveedores from './components/ModuloProveedores';
 import ModuloGastos from './components/ModuloGastos';
 import ModuloReportes from './components/ModuloReportes';
 import ModuloHistorial from './components/ModuloHistorial';
+import ModuloEmpleados from './components/ModuloEmpleados';
+
+const ROLES_VALIDOS = ['admin', 'vendedor'];
+
+// Sin documento en `roles` (o con un perfil desconocido) no hay acceso: las reglas
+// de Firestore rechazarían cualquier lectura, así que no se deja pasar como vendedor.
+async function consultarAcceso(email) {
+  try {
+    const docRol = await getDoc(doc(db, "roles", email));
+    const datos = docRol.exists() ? docRol.data() : null;
+    if (!datos || !ROLES_VALIDOS.includes(datos.rol)) return { estado: 'sin-rol' };
+    // Sacamos el nombre seguro de la BD, si no existe, usamos la primera parte de su correo
+    return { estado: 'ok', rol: datos.rol, nombre: datos.nombre || email.split('@')[0] };
+  } catch (error) {
+    console.error("Error obteniendo rol:", error);
+    return { estado: 'error' };
+  }
+}
 
 export default function App() {
   const [vistaActiva, setVistaActiva] = useState('facturas');
   const [usuario, setUsuario] = useState(null);
-  const [rol, setRol] = useState('vendedor');
+  const [rol, setRol] = useState(null);
   const [nombreSeguro, setNombreSeguro] = useState(''); // Nuevo estado de seguridad
+  const [estadoAcceso, setEstadoAcceso] = useState('sin-rol'); // ok | sin-rol | error
   const [cargandoAuth, setCargandoAuth] = useState(true);
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const [cotizacionParaFacturar, setCotizacionParaFacturar] = useState(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCargandoAuth(true);
       if (user) {
-        setUsuario(user);
-        try {
-          const docRol = await getDoc(doc(db, "roles", user.email));
-          if (docRol.exists()) {
-            setRol(docRol.data().rol || 'vendedor');
-            // Sacamos el nombre seguro de la BD, si no existe, usamos la primera parte de su correo
-            setNombreSeguro(docRol.data().nombre || user.email.split('@')[0]);
-          } else {
-            setRol('vendedor');
-            setNombreSeguro(user.email.split('@')[0]);
-          }
-        } catch (error) {
-          console.error("Error obteniendo rol:", error);
-          setRol('vendedor');
-          setNombreSeguro(user.email.split('@')[0]);
-        }
+        const acceso = await consultarAcceso(user.email);
+        setRol(acceso.rol || null);
+        setNombreSeguro(acceso.nombre || '');
+        setEstadoAcceso(acceso.estado);
       } else {
-        setUsuario(null);
+        setRol(null);
+        setNombreSeguro('');
       }
+      setUsuario(user);
       setCargandoAuth(false);
     });
     return () => unsubscribe();
@@ -63,6 +73,7 @@ export default function App() {
 
   if (cargandoAuth) return <div className="h-screen bg-slate-900"></div>;
   if (!usuario) return <Login />;
+  if (estadoAcceso !== 'ok') return <PantallaSinAcceso estado={estadoAcceso} correo={usuario.email} />;
 
   const opcionesNavegacion = [
     { id: 'inventario', etiqueta: 'Inventario', icono: Package, visible: true },
@@ -72,7 +83,8 @@ export default function App() {
     { id: 'proveedores', etiqueta: 'Proveedores', icono: Truck, visible: rol === 'admin' },
     { id: 'gastos', etiqueta: 'Compras / Gastos', icono: Wallet, visible: rol === 'admin' },
     { id: 'reportes', etiqueta: 'Panel y reportes', icono: BarChart3, visible: rol === 'admin' },
-    { id: 'historial', etiqueta: 'Historial / BI', icono: Clock, visible: rol === 'admin' }
+    { id: 'historial', etiqueta: 'Historial / BI', icono: Clock, visible: rol === 'admin' },
+    { id: 'empleados', etiqueta: 'Empleados', icono: UserCog, visible: rol === 'admin' }
   ].filter((opcion) => opcion.visible);
 
   const cambiarVista = (vista) => {
@@ -185,6 +197,41 @@ export default function App() {
         {vistaActiva === 'gastos' && rol === 'admin' && <ModuloGastos registrarHistorial={registrarHistorialGlobal} usuarioActual={nombreSeguro} />}
         {vistaActiva === 'reportes' && rol === 'admin' && <ModuloReportes />}
         {vistaActiva === 'historial' && rol === 'admin' && <ModuloHistorial />}
+        {vistaActiva === 'empleados' && rol === 'admin' && (
+          <ModuloEmpleados registrarHistorial={registrarHistorialGlobal} correoActual={usuario.email} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PantallaSinAcceso({ estado, correo }) {
+  const sinRol = estado === 'sin-rol';
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4">
+      <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
+        <ShieldAlert size={44} className="mx-auto text-amber-500 mb-4" />
+        <h1 className="text-xl font-black text-slate-800 mb-2">
+          {sinRol ? 'Su usuario no tiene acceso al sistema' : 'No se pudo verificar su acceso'}
+        </h1>
+        <p className="text-sm text-slate-500 mb-6">
+          {sinRol ? (
+            <>La cuenta <b className="text-slate-700 break-all">{correo}</b> no tiene un perfil asignado. Un administrador debe darle acceso desde el módulo Empleados.</>
+          ) : (
+            'Revise su conexión a internet e intente de nuevo.'
+          )}
+        </p>
+        <div className="flex flex-col sm:flex-row gap-2 justify-center">
+          {!sinRol && (
+            <button onClick={() => window.location.reload()} className="bg-emerald-500 text-white font-bold py-2.5 px-5 rounded-lg hover:bg-emerald-600 transition-colors">
+              Reintentar
+            </button>
+          )}
+          <button onClick={() => signOut(auth)} className="bg-red-500/10 text-red-600 font-bold py-2.5 px-5 rounded-lg hover:bg-red-600 hover:text-white transition-colors border border-red-500/20">
+            Cerrar sesión
+          </button>
+        </div>
       </div>
     </div>
   );

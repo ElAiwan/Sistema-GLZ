@@ -25,9 +25,38 @@ service cloud.firestore {
       return roleValue() in ["admin", "vendedor"];
     }
 
+    function esPropio(userEmail) {
+      return userEmail == request.auth.token.email;
+    }
+
+    function rolValido() {
+      let datos = request.resource.data;
+      return datos.rol in ["admin", "vendedor"]
+        && datos.nombre is string
+        && datos.nombre.size() >= 1
+        && datos.nombre.size() <= 60;
+    }
+
     match /roles/{userEmail} {
-      allow read: if signedIn() && userEmail == request.auth.token.email;
-      allow write: if false;
+      // Cada usuario lee su propio rol; el admin ve todos para el módulo Empleados.
+      allow read: if signedIn() && (esPropio(userEmail) || isAdmin());
+
+      // El admin gestiona el acceso de los demás, nunca el suyo: así nadie se
+      // quita el perfil de administrador por error. Las cuentas de Auth se
+      // siguen creando y borrando desde la consola (Spark no tiene Functions).
+      allow create: if isAdmin()
+        && !esPropio(userEmail)
+        && userEmail == userEmail.lower()
+        && request.resource.data.keys().hasOnly(["rol", "nombre"])
+        && rolValido();
+
+      // Solo nombre y perfil; los campos puestos a mano en la consola se conservan.
+      allow update: if isAdmin()
+        && !esPropio(userEmail)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["rol", "nombre"])
+        && rolValido();
+
+      allow delete: if isAdmin() && !esPropio(userEmail);
     }
 
     match /clientes/{id} {
