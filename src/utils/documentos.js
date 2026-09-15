@@ -49,7 +49,7 @@ export const etiquetaDocumento = (documento) => {
   return `Factura${numeroFisico ? ` N° ${numeroFisico}` : ''}`;
 };
 
-const limpiarParaArchivo = (texto) => `${texto || ''}`
+export const limpiarParaArchivo = (texto) => `${texto || ''}`
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .replace(/[^a-zA-Z0-9]+/g, '-')

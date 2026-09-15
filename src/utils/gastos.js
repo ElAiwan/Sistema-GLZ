@@ -1,7 +1,7 @@
 // Utilidades de egresos: compras de mercadería y gastos operativos.
 // La lógica de crédito es espejo de la que ya usan las facturas de venta.
 
-import { normalizarMoneda } from './documentos';
+import { limpiarParaArchivo, normalizarMoneda } from './documentos';
 
 export const TIPO_EGRESO = {
   COMPRA: 'Compra',
@@ -63,3 +63,13 @@ export const resolverMensajeErrorEgreso = (error) => {
   if (error?.code === 'unavailable') return 'Firestore no está disponible. Revisa tu conexión e intenta de nuevo.';
   return 'No se pudo completar la operación. Intenta nuevamente.';
 };
+
+// Los egresos no tienen correlativo: el comprobante usa un código corto y estable del id.
+export const codigoComprobante = (egreso) => `EG-${`${egreso?.id || ''}`.slice(0, 6).toUpperCase() || 'SINID'}`;
+
+export const nombreArchivoComprobante = (egreso) => [
+  'Comprobante',
+  codigoComprobante(egreso),
+  limpiarParaArchivo(egreso?.proveedor),
+  `${egreso?.fecha || ''}`.slice(0, 10)
+].filter(Boolean).join('-');

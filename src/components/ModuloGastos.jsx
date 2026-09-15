@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { db } from '../firebase';
 import { collection, doc, getDocs, limit, orderBy, query, runTransaction } from 'firebase/firestore';
-import { ShoppingCart, Receipt, AlertCircle, Search, Trash2, Plus, RefreshCw } from 'lucide-react';
+import { ShoppingCart, Receipt, AlertCircle, Search, Trash2, Plus, RefreshCw, FileText } from 'lucide-react';
+import ModalComprobanteEgreso from './ModalComprobanteEgreso';
 import { normalizarMoneda, formatearMonto } from '../utils/documentos';
 import {
   CATEGORIAS_GASTO,
@@ -47,6 +48,8 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
   const [aviso, setAviso] = useState('');
   const [procesando, setProcesando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  const [comprobante, setComprobante] = useState(null);
+  const [ultimoRegistroId, setUltimoRegistroId] = useState('');
 
   // Formulario común
   const [proveedorStr, setProveedorStr] = useState('');
@@ -213,7 +216,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
 
     setProcesando(true);
     try {
-      await runTransaction(db, async (transaction) => {
+      const idRegistrado = await runTransaction(db, async (transaction) => {
         // ---------- LECTURAS ----------
         // Todas antes de cualquier escritura: Firestore lo exige.
         const lecturas = [];
@@ -267,6 +270,8 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
             usuario: usuarioActual
           }));
         }
+
+        return egresoRef.id;
       });
 
       try {
@@ -281,6 +286,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
       setAviso(esCompraNueva
         ? 'Compra registrada. Las existencias ya fueron actualizadas.'
         : 'Gasto registrado.');
+      setUltimoRegistroId(idRegistrado);
       limpiarFormulario();
       await cargarDatos();
     } catch (errorRegistro) {
@@ -370,6 +376,9 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
     [egresos]
   );
 
+  // El aviso de éxito ofrece el comprobante del registro recién guardado, ya recargado desde Firestore.
+  const egresoRegistrado = ultimoRegistroId ? egresos.find((e) => e.id === ultimoRegistroId) : null;
+
   const esFormulario = pestaña !== 'porPagar';
 
   const Tab = ({ id, etiqueta, icono, contador }) => {
@@ -397,7 +406,16 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
 
         <div className="p-3 sm:p-6 space-y-6">
           {error && <div className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg">{error}</div>}
-          {aviso && <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg">{aviso}</div>}
+          {aviso && (
+            <div className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <span>{aviso}</span>
+              {egresoRegistrado && (
+                <button onClick={() => setComprobante(egresoRegistrado)} className="inline-flex items-center justify-center gap-1.5 bg-white border border-emerald-300 text-emerald-700 px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-100">
+                  <FileText size={14} /> Ver comprobante
+                </button>
+              )}
+            </div>
+          )}
 
           {esFormulario && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-4">
@@ -576,6 +594,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                     <th className="p-3 text-right">Total</th>
                     <th className="p-3 text-center">Pago</th>
                     <th className="p-3 text-center">Estado</th>
+                    <th className="p-3 text-center">Comprobante</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -599,10 +618,15 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                           ) : <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">Saldado</span>
                         ) : <span className="text-slate-400 text-xs font-semibold">Pagado</span>}
                       </td>
+                      <td className="p-3 text-center">
+                        <button onClick={() => setComprobante(e)} className="inline-flex items-center gap-1 text-slate-600 border border-slate-200 bg-white px-2.5 py-1 rounded-lg text-xs font-bold hover:bg-slate-100" title="Ver e imprimir comprobante">
+                          <FileText size={14} /> Ver
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {listaFiltrada.length === 0 && !cargando && (
-                    <tr><td colSpan="6" className="p-8 text-center text-slate-400">
+                    <tr><td colSpan="7" className="p-8 text-center text-slate-400">
                       {pestaña === 'porPagar' ? 'No hay cuentas pendientes con proveedores.' : 'Todavía no hay registros.'}
                     </td></tr>
                   )}
@@ -613,6 +637,8 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
           </div>
         </div>
       </div>
+
+      <ModalComprobanteEgreso egreso={comprobante} onCerrar={() => setComprobante(null)} />
 
       {modalAbono.abierto && modalAbono.egreso && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 p-2 sm:p-4 flex items-center justify-center print:hidden">
