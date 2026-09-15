@@ -537,10 +537,12 @@ export default function ModuloFacturacion({
     <>
       {/* VISTA DE PANTALLA: Se oculta al imprimir (print:hidden) */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-6 print:hidden">
-        <div className="lg:col-span-1 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        {/* En computadora el catálogo queda fijo al bajar y su lista usa el alto real de la
+            ventana (no un número fijo), para aprovechar pantallas altas o con poca escala. */}
+        <div className="lg:col-span-1 lg:self-start lg:sticky lg:top-8 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
           <h2 className="text-lg font-bold mb-4 border-b pb-2 text-slate-800">Catálogo Disponible</h2>
           <div className="mb-4 flex items-center bg-slate-50 border rounded-lg p-2"><Search className="text-slate-400 mr-2" size={18} /><input type="text" placeholder="Buscar repuesto..." className="w-full outline-none bg-transparent text-sm" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} /></div>
-          <div className="overflow-y-auto pr-1 space-y-2 max-h-[320px] lg:max-h-[420px] xl:max-h-[560px]">
+          <div className="overflow-y-auto pr-1 space-y-2 max-h-[320px] lg:max-h-[calc(100dvh_-_13rem)]">
             {disponibles.map(item => (
               <div key={item.id} className="p-3 border rounded-lg bg-slate-50 flex justify-between items-center gap-3 hover:border-emerald-300 transition-colors">
                 {/* min-w-0 es lo que permite que el texto se recorte en vez de
@@ -565,7 +567,7 @@ export default function ModuloFacturacion({
           </div>
         </div>
 
-        <div className="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border-t-4 border-slate-800">
+        <div className="lg:col-span-3 lg:self-start bg-white p-6 rounded-xl shadow-sm border-t-4 border-slate-800">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6 border-b pb-4 shrink-0">
             <h2 className="text-2xl font-bold flex items-center flex-wrap gap-x-3 gap-y-1">
               Documento Comercial
@@ -654,7 +656,9 @@ export default function ModuloFacturacion({
             </div>
           </div>
 
-          <div className="overflow-y-auto border rounded-lg bg-slate-50 max-h-[320px] lg:max-h-[400px] xl:max-h-[500px]">
+          {/* Nunca más baja que antes (400/500 px); en pantallas altas crece con el espacio que
+              dejan libre el formulario, el total y el botón (~46rem medidos en modo Factura). */}
+          <div className="overflow-y-auto border rounded-lg bg-slate-50 max-h-[320px] lg:max-h-[max(400px,calc(100dvh_-_46rem))] xl:max-h-[max(500px,calc(100dvh_-_46rem))]">
             <div className="md:hidden p-2 space-y-2">
               {carrito.map((item) => (
                 <div key={item.id} className="bg-white border border-slate-200 rounded-lg p-3">
