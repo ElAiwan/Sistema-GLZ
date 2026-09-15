@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { db } from '../firebase';
-import { collection, doc, getDocs, limit, orderBy, query, runTransaction } from 'firebase/firestore';
+import { collection, deleteField, doc, getDocs, limit, orderBy, query, runTransaction } from 'firebase/firestore';
 import { ShoppingCart, Receipt, AlertCircle, Search, Trash2, Plus, RefreshCw, FileText, Ban } from 'lucide-react';
 import ModalComprobanteEgreso from './ModalComprobanteEgreso';
+import AvisoCostoCompra from './AvisoCostoCompra';
+import { cambiosPorCompra } from '../utils/costos';
 import { normalizarMoneda, formatearMonto } from '../utils/documentos';
 import {
   CATEGORIAS_GASTO,
@@ -153,7 +155,11 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
         localidad: repuesto.localidad || 'Managua',
         existencia: Number(repuesto.cantidad || 0),
         cantidad: 1,
-        costo: normalizarMoneda(repuesto.costo || 0)
+        costo: normalizarMoneda(repuesto.costo || 0),
+        // Para avisar si la compra entra a otro costo y cómo cambia el margen.
+        costoActual: normalizarMoneda(repuesto.costo || 0),
+        precioVerde: normalizarMoneda(repuesto.precioVerde || 0),
+        actualizarCosto: true
       }];
     });
     setBusquedaRepuesto('');
@@ -241,13 +247,21 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
         }
 
         // ---------- ESCRITURAS ----------
-        // La compra solo suma existencias: el costo del repuesto no se toca,
-        // se sigue administrando a mano desde Inventario.
-        for (const { item, ref } of lecturas) {
-          transaction.update(ref, { cantidad: nuevosStocks[item.id] });
-        }
-
         const egresoRef = doc(collection(db, 'gastos'));
+        const fechaRegistro = new Date().toISOString();
+        // La compra suma existencias y, si entró a otro costo, deja el cambio anotado en el
+        // repuesto (y actualiza el costo cuando la casilla está marcada).
+        const cambiosCosto = {};
+        for (const { item, ref, snap } of lecturas) {
+          cambiosCosto[item.id] = cambiosPorCompra({
+            datos: snap.data(),
+            item,
+            idCompra: egresoRef.id,
+            proveedor: base.proveedor,
+            fecha: fechaRegistro
+          });
+          transaction.update(ref, { cantidad: nuevosStocks[item.id], ...cambiosCosto[item.id] });
+        }
         transaction.set(egresoRef, {
           ...base,
           items: esCompraNueva
@@ -272,6 +286,9 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
             stockAnterior: Number(snap.data().cantidad || 0),
             stockNuevo: nuevosStocks[item.id],
             referencia: { coleccion: 'gastos', id: egresoRef.id, texto: textoCompra },
+            motivo: cambiosCosto[item.id].cambioCosto?.idCompra === egresoRef.id
+              ? `Costo C$ ${formatearMonto(cambiosCosto[item.id].cambioCosto.costoAnterior)} → C$ ${formatearMonto(cambiosCosto[item.id].cambioCosto.costoNuevo)}`
+              : '',
             usuario: usuarioActual
           }));
         }
@@ -418,7 +435,17 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
           if (!repuestoSnap.exists()) { faltantes += 1; continue; }
           const actual = Number(repuestoSnap.data().cantidad || 0);
           const nuevo = normalizarMoneda(actual - Number(item.cant || 0));
-          transaction.update(repuestoRef, { cantidad: nuevo });
+          // Si esta compra fue la que cambió el costo y nadie lo tocó después, vuelve al anterior.
+          const datosRepuesto = repuestoSnap.data();
+          const cambioDeEstaCompra = datosRepuesto.cambioCosto?.idCompra === objetivo.id ? datosRepuesto.cambioCosto : null;
+          const revertirCosto = {};
+          if (cambioDeEstaCompra) {
+            if (normalizarMoneda(datosRepuesto.costo) === normalizarMoneda(cambioDeEstaCompra.costoNuevo)) {
+              revertirCosto.costo = normalizarMoneda(cambioDeEstaCompra.costoAnterior);
+            }
+            revertirCosto.cambioCosto = deleteField();
+          }
+          transaction.update(repuestoRef, { cantidad: nuevo, ...revertirCosto });
           transaction.set(nuevoMovimientoRef(db), construirMovimiento({
             idRepuesto: repuestoRef.id,
             repuesto: repuestoSnap.data(),
@@ -604,7 +631,8 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                         </thead>
                         <tbody>
                           {itemsCompra.map((i) => (
-                            <tr key={i.id} className="border-b">
+                            <Fragment key={i.id}>
+                            <tr className="border-b">
                               <td className="p-2.5">
                                 <p className="font-bold">{i.codigo}</p>
                                 <p className="text-xs text-slate-500">{i.descripcion}</p>
@@ -621,6 +649,14 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                                 <button onClick={() => setItemsCompra((a) => a.filter((x) => x.id !== i.id))} className="text-red-400 p-1"><Trash2 size={16} /></button>
                               </td>
                             </tr>
+                            {normalizarMoneda(i.costo) > 0 && normalizarMoneda(i.costo) !== normalizarMoneda(i.costoActual) && (
+                              <tr className="border-b">
+                                <td colSpan="5" className="px-2.5 pb-2.5">
+                                  <AvisoCostoCompra item={i} onAlternarActualizar={() => actualizarItem(i.id, 'actualizarCosto', !i.actualizarCosto)} />
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
                           ))}
                         </tbody>
                       </table>
@@ -628,7 +664,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                   )}
 
                   <p className="text-[11px] text-slate-500">
-                    La compra suma existencias pero <span className="font-bold">no cambia el costo del repuesto</span>. El costo se sigue ajustando desde Inventario.
+                    La compra suma existencias. Si un repuesto entra a <span className="font-bold">otro costo</span>, debajo aparece el aviso con la opción de actualizarlo; los precios de venta se cambian en Inventario con el botón de etiqueta.
                   </p>
                 </div>
               )}

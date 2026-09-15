@@ -1,16 +1,33 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, doc, runTransaction, updateDoc, writeBatch } from 'firebase/firestore';
-import { Trash2, Search, Edit2, Check, X, MapPin, History, ArrowLeftRight, BellRing, AlertTriangle } from 'lucide-react';
+import { Trash2, Search, Edit2, Check, X, MapPin, History, ArrowLeftRight, BellRing, AlertTriangle, Tag } from 'lucide-react';
 import ModalMovimientos from './ModalMovimientos';
 import ModalTraslado from './ModalTraslado';
-import { normalizarMoneda } from '../utils/documentos';
+import ModalPrecios from './ModalPrecios';
+import { formatearMonto, normalizarMoneda } from '../utils/documentos';
+import { avisoCostoActivo, piezasPorCosto, textoPorcentaje, variacionCosto } from '../utils/costos';
 import { TIPO_MOVIMIENTO, construirMovimiento, nuevoMovimientoRef } from '../utils/kardex';
 
 const MOTIVO_MINIMO = 3;
 
 // Un repuesto sin mínimo (0) nunca avisa. Con mínimo, avisa al llegar a esa cantidad o menos.
 const esStockBajo = (item) => Number(item.stockMinimo || 0) > 0 && Number(item.cantidad || 0) <= Number(item.stockMinimo);
+
+// Aviso de la última compra a otro costo, mientras queden piezas al costo anterior (solo admin).
+function EtiquetaCambioCosto({ item, onAbrir }) {
+  const variacion = variacionCosto(item.cambioCosto.costoAnterior, item.cambioCosto.costoNuevo);
+  const piezas = piezasPorCosto(item);
+  return (
+    <button
+      onClick={onAbrir}
+      className={`mt-1 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${variacion.sube ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'}`}
+      title={`Última compra: C$ ${formatearMonto(variacion.anterior)} → C$ ${formatearMonto(variacion.nuevo)}. Quedan ${piezas.anteriores} al costo anterior y ${piezas.nuevas} al nuevo.`}
+    >
+      {variacion.sube ? '▲' : '▼'} Costo {textoPorcentaje(variacion.porcentaje)} · {piezas.anteriores} viejas
+    </button>
+  );
+}
 
 export default function ModuloInventario({ registrarHistorial, rol, usuarioActual = '' }) {
   const [repuestos, setRepuestos] = useState([]);
@@ -23,6 +40,7 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
   const [repuestoMovimientos, setRepuestoMovimientos] = useState(null);
   const [repuestoTraslado, setRepuestoTraslado] = useState(null);
   const [soloStockBajo, setSoloStockBajo] = useState(false);
+  const [repuestoPrecios, setRepuestoPrecios] = useState(null);
 
   const obtenerRepuestos = async () => {
     const snap = await getDocs(collection(db, "repuestos"));
@@ -312,6 +330,11 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                 <p>C$ {formatear(item.precioRojo)}</p>
               </div>
             </div>
+            {rol === 'admin' && avisoCostoActivo(item) && (
+              <div className="mt-2 text-right">
+                <EtiquetaCambioCosto item={item} onAbrir={() => setRepuestoPrecios(item)} />
+              </div>
+            )}
 
             {rol === 'admin' && (
               <div className="mt-3">
@@ -328,6 +351,7 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                   <div className="flex justify-end gap-2">
                     <button onClick={() => setRepuestoMovimientos(item)} className="text-slate-600 p-2 rounded bg-white border border-slate-200" title="Movimientos"><History size={16} /></button>
                     <button onClick={() => setRepuestoTraslado(item)} className="text-violet-600 p-2 rounded bg-white border border-slate-200" title="Trasladar a otra bodega"><ArrowLeftRight size={16} /></button>
+                    <button onClick={() => setRepuestoPrecios(item)} className="text-emerald-700 p-2 rounded bg-white border border-slate-200" title="Editar costo y precios"><Tag size={16} /></button>
                     <button onClick={() => definirStockMinimo(item)} className="text-amber-600 p-2 rounded bg-white border border-slate-200" title="Definir stock mínimo"><BellRing size={16} /></button>
                     <button onClick={() => empezarAjuste(item)} className="text-blue-500 p-2 rounded bg-white border border-slate-200" title="Ajustar Stock"><Edit2 size={16} /></button>
                     <button onClick={() => eliminarRepuesto(item)} className="text-red-400 p-2 rounded bg-white border border-slate-200" title="Eliminar"><Trash2 size={16} /></button>
@@ -380,7 +404,14 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                 <td className="p-3"><span className="flex items-center text-xs font-semibold text-slate-500"><MapPin size={14} className="mr-1"/>{item.localidad || 'Managua'}</span></td>
 
                 {/* SEGURIDAD: Solo admin ve Costo */}
-                {rol === 'admin' && <td className="p-3 text-right font-medium text-slate-500">{formatear(item.costo)}</td>}
+                {rol === 'admin' && (
+                  <td className="p-3 text-right font-medium text-slate-500">
+                    {formatear(item.costo)}
+                    {avisoCostoActivo(item) && (
+                      <div><EtiquetaCambioCosto item={item} onAbrir={() => setRepuestoPrecios(item)} /></div>
+                    )}
+                  </td>
+                )}
 
                 <td className="p-3 text-center">
                   <select className="border border-slate-300 rounded p-1.5 font-bold outline-none cursor-pointer bg-white text-slate-700 text-xs">
@@ -399,6 +430,7 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
                         <>
                           <button onClick={() => setRepuestoMovimientos(item)} className="text-slate-600 p-1" title="Movimientos"><History size={18} /></button>
                           <button onClick={() => setRepuestoTraslado(item)} className="text-violet-600 p-1" title="Trasladar a otra bodega"><ArrowLeftRight size={18} /></button>
+                          <button onClick={() => setRepuestoPrecios(item)} className="text-emerald-700 p-1" title="Editar costo y precios"><Tag size={18} /></button>
                           <button onClick={() => definirStockMinimo(item)} className="text-amber-600 p-1" title="Definir stock mínimo"><BellRing size={18} /></button>
                           <button onClick={() => empezarAjuste(item)} className="text-blue-500 p-1" title="Ajustar Stock"><Edit2 size={18} /></button>
                           <button onClick={() => eliminarRepuesto(item)} className="text-red-400 p-1" title="Eliminar"><Trash2 size={18} /></button>
@@ -415,6 +447,15 @@ export default function ModuloInventario({ registrarHistorial, rol, usuarioActua
 
       {repuestoMovimientos && (
         <ModalMovimientos repuesto={repuestoMovimientos} onCerrar={() => setRepuestoMovimientos(null)} />
+      )}
+      {repuestoPrecios && (
+        <ModalPrecios
+          repuesto={repuestoPrecios}
+          repuestos={repuestos}
+          registrarHistorial={registrarHistorial}
+          onCerrar={() => setRepuestoPrecios(null)}
+          onGuardado={obtenerRepuestos}
+        />
       )}
       {repuestoTraslado && (
         <ModalTraslado

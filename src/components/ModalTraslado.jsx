@@ -76,7 +76,9 @@ export default function ModalTraslado({ repuesto, usuarioActual, registrarHistor
         } else {
           // No existe en la otra bodega: se crea con los mismos datos y precios.
           destinoRef = doc(collection(db, 'repuestos'));
-          datosDestino = { ...datosOrigen, localidad: destino, cantidad: nuevoStockDestino };
+          // El aviso de cambio de costo cuenta piezas de esta bodega: no se copia a la otra.
+          const { cambioCosto: _cambioCosto, ...datosSinCambioCosto } = datosOrigen;
+          datosDestino = { ...datosSinCambioCosto, localidad: destino, cantidad: nuevoStockDestino };
           transaction.set(destinoRef, datosDestino);
         }
 

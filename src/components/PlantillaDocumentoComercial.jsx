@@ -49,13 +49,14 @@ const fechaSegura = (fecha) => {
 
 // ---- Calibración de la tabla contra el talonario preimpreso ----
 // Medido sobre una impresión real: la banda azul de encabezados termina cerca
-// de los 9.8 cm y la zona rayada llega hasta unos 19.1 cm, donde empieza el
-// área de totales. Con estos valores caben unos 15 renglones.
+// de los 9.8 cm y la zona rayada llega hasta el área de totales.
+// Talonario nuevo (septiembre 2026, formato DGI): ya no trae las casillas de
+// Contado / Crédito ni las líneas de "Autorizado por" y vencimiento, así que
+// esos datos dejaron de imprimirse. La tabla y los totales siguen en su lugar.
 const TABLA_INICIO = '10.2cm';
 const FILA_ALTO = '0.60cm';
-// Estos dos son los que marcan dónde tiene que terminar la lista: el renglón
-// que los alcance se imprime encima. Bajarlos es lo que gana renglones.
-const AUTORIZADO_TOP = '19.85cm';
+// El subtotal marca dónde tiene que terminar la lista: el renglón que lo alcance
+// se imprime encima.
 const SUBTOTAL_TOP = '20.5cm';
 
 const esCotizacion = (tipo) => {
@@ -66,7 +67,6 @@ const esCotizacion = (tipo) => {
 export default function PlantillaDocumentoComercial({ documento, soloImpresion = false }) {
   const tipo = documento?.tipo || 'Factura';
   const numeroDocumento = documento?.numeroDocumento || '';
-  const formaPago = documento?.formaPago || 'Efectivo';
   const cliente = documento?.cliente || 'Cliente Mostrador';
   const telefono = documento?.telefono || '';
   const ruc = documento?.ruc || '';
@@ -80,9 +80,6 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
   const dia = String(fecha.getDate()).padStart(2, '0');
   const mes = String(fecha.getMonth() + 1).padStart(2, '0');
   const anio = String(fecha.getFullYear());
-  const fechaVencimiento = new Date(fecha);
-  fechaVencimiento.setDate(fechaVencimiento.getDate() + 1);
-  const fechaVencimientoTexto = fechaVencimiento.toLocaleDateString('es-NI');
 
   return (
     <div
@@ -121,9 +118,6 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
       <div className="absolute text-center" style={{ top: '5.3cm', right: '5.9cm', width: '0.9cm' }}>{mes}</div>
       <div className="absolute text-center" style={{ top: '5.3cm', right: '3.1cm', width: '1.6cm' }}>{anio}</div>
 
-      {formaPago !== 'Credito' && <div className="absolute font-bold text-sm text-center" style={{ top: '7.7cm', right: '6.1cm', width: '0.7cm', lineHeight: '0.7cm' }}>X</div>}
-      {formaPago === 'Credito' && <div className="absolute font-bold text-sm text-center" style={{ top: '7.7cm', right: '10.1cm', width: '0.6cm', lineHeight: '0.6cm' }}>X</div>}
-
       <div className="absolute font-bold text-[13.5px] uppercase whitespace-nowrap overflow-hidden text-ellipsis" style={{ top: '6.1cm', left: '4.0cm', width: '10.5cm' }}>{cliente}</div>
       <div className="absolute text-[13.5px] whitespace-nowrap overflow-hidden text-ellipsis" style={{ top: '7.0cm', left: '4.0cm', width: '6.8cm' }}>{telefono}</div>
       <div className="absolute uppercase whitespace-nowrap overflow-hidden text-ellipsis" style={{ top: '6.5cm', right: '0.1cm', width: '6.5cm' }}>{ruc}</div>
@@ -154,13 +148,6 @@ export default function PlantillaDocumentoComercial({ documento, soloImpresion =
 
       <div className="absolute text-right font-bold" style={{ top: SUBTOTAL_TOP, left: '13.4cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
       <div className="absolute text-right font-black text-sm" style={{ top: '21.4cm', left: '13.5cm', width: '5.6cm' }}>{formatearMonto(totalDocumento)}</div>
-
-      <div className="absolute whitespace-nowrap" style={{ top: '20.75cm', left: '6.3cm', width: '3.5cm' }}>
-        {fechaVencimientoTexto}
-      </div>
-      <div className="absolute whitespace-nowrap" style={{ top: AUTORIZADO_TOP, left: '4.4cm', width: '4cm' }}>
-        AZelaya
-      </div>
     </div>
   );
 }
