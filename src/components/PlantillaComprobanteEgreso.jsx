@@ -96,8 +96,8 @@ export default function PlantillaComprobanteEgreso({ egreso, soloImpresion = fal
             {compra ? 'Datos de la compra' : 'Datos del gasto'}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2">
-            <Dato etiqueta="Proveedor" valor={egreso?.proveedor} className="border-b sm:border-r" />
-            <Dato etiqueta="N° de documento del proveedor" valor={egreso?.numeroDocumento} className="border-b" />
+            <Dato etiqueta={compra ? 'Proveedor' : 'Pagado a'} valor={egreso?.proveedor} className="border-b sm:border-r" />
+            <Dato etiqueta={compra ? 'N° de documento del proveedor' : 'N° de documento'} valor={egreso?.numeroDocumento} className="border-b" />
             <Dato etiqueta={compra ? 'Detalle' : 'Categoría'} valor={compra ? egreso?.descripcion : egreso?.categoria} className="border-b sm:border-r" />
             <Dato etiqueta="Forma de pago" valor={egreso?.formaPago === 'Credito' ? 'Crédito' : egreso?.formaPago} className="border-b" />
             {!compra && <Dato etiqueta="Descripción" valor={egreso?.descripcion} className="border-b sm:col-span-2" />}

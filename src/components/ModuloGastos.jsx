@@ -106,6 +106,12 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
 
   useEffect(() => { cargarDatos(); }, [cargarDatos]);
 
+  // En Gastos el texto es libre: no se ata a la lista de proveedores ni guarda su id.
+  const escribirPagadoA = (nombre) => {
+    setProveedorStr(nombre);
+    setProveedorId('');
+  };
+
   const seleccionarProveedor = (nombre) => {
     setProveedorStr(nombre);
     const encontrado = proveedores.find((p) => p.nombre === nombre);
@@ -216,7 +222,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
       tipo: esCompraNueva ? TIPO_EGRESO.COMPRA : TIPO_EGRESO.GASTO,
       categoria: esCompraNueva ? 'Mercadería' : categoria,
       descripcion: esCompraNueva ? `Compra de ${itemsCompra.length} repuesto(s)` : descripcion.trim(),
-      idProveedor: proveedorId || '',
+      idProveedor: esCompraNueva ? (proveedorId || '') : '',
       proveedor: proveedorStr.trim() || 'Sin proveedor',
       numeroDocumento: numeroDocumento.trim(),
       fecha: fechaISO,
@@ -514,6 +520,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
   // El aviso de éxito ofrece el comprobante del registro recién guardado, ya recargado desde Firestore.
   const egresoRegistrado = ultimoRegistroId ? egresos.find((e) => e.id === ultimoRegistroId) : null;
 
+  const esGastoOperativo = pestaña === 'gastos';
   const esFormulario = pestaña !== 'porPagar';
 
   const Tab = ({ id, etiqueta, icono, contador }) => {
@@ -560,13 +567,34 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Proveedor {pestaña === 'gastos' && <span className="font-medium text-slate-400">(opcional)</span>}</label>
-                  <input type="text" list="prov-list" value={proveedorStr} onChange={(e) => seleccionarProveedor(e.target.value)} placeholder="Escribe o elige de la lista..." className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500" />
-                  <datalist id="prov-list">{proveedores.map((p) => <option key={p.id} value={p.nombre} />)}</datalist>
+                  <label htmlFor="egreso-pagado-a" className="block text-xs font-bold text-slate-500 mb-1">
+                    {esGastoOperativo ? '¿A quién se le pagó?' : 'Proveedor'} <span className="font-medium text-slate-400">(opcional)</span>
+                  </label>
+                  <input
+                    id="egreso-pagado-a"
+                    type="text"
+                    list={esGastoOperativo ? undefined : 'prov-list'}
+                    value={proveedorStr}
+                    onChange={(e) => (esGastoOperativo ? escribirPagadoA(e.target.value) : seleccionarProveedor(e.target.value))}
+                    placeholder={esGastoOperativo ? 'Ej: mercado, un cliente, don Julio...' : 'Escribe o elige de la lista...'}
+                    className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500"
+                  />
+                  {esGastoOperativo
+                    ? <p className="text-[11px] text-slate-500 mt-1">Escríbalo libremente: no hace falta que esté en la lista de proveedores ni que haya factura.</p>
+                    : <datalist id="prov-list">{proveedores.map((p) => <option key={p.id} value={p.nombre} />)}</datalist>}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 mb-1">N° de documento</label>
-                  <input type="text" value={numeroDocumento} onChange={(e) => setNumeroDocumento(e.target.value)} placeholder="Factura del proveedor" className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500" />
+                  <label htmlFor="egreso-documento" className="block text-xs font-bold text-slate-500 mb-1">
+                    N° de documento <span className="font-medium text-slate-400">(opcional)</span>
+                  </label>
+                  <input
+                    id="egreso-documento"
+                    type="text"
+                    value={numeroDocumento}
+                    onChange={(e) => setNumeroDocumento(e.target.value)}
+                    placeholder={esGastoOperativo ? 'Recibo, referencia o nada' : 'Factura del proveedor'}
+                    className="w-full border p-2.5 rounded-lg bg-white outline-none focus:border-emerald-500"
+                  />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 mb-1">Fecha</label>
@@ -734,7 +762,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
                   <tr>
                     <th className="p-3">Fecha</th>
                     <th className="p-3">Detalle</th>
-                    <th className="p-3">Proveedor</th>
+                    <th className="p-3">{esGastoOperativo ? 'Pagado a' : 'Proveedor'}</th>
                     <th className="p-3 text-right">Total</th>
                     <th className="p-3 text-center">Pago</th>
                     <th className="p-3 text-center">Estado</th>
@@ -805,7 +833,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
 
             <div className="p-4 sm:p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Proveedor</p><p className="font-bold text-slate-700">{modalAnular.proveedor}</p></div>
+                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">{esCompra(modalAnular) ? 'Proveedor' : 'Pagado a'}</p><p className="font-bold text-slate-700">{modalAnular.proveedor}</p></div>
                 <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Documento</p><p className="font-bold text-slate-700">{etiquetaEgreso(modalAnular)}</p></div>
                 <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Fecha</p><p className="font-bold text-slate-700">{formatearFecha(modalAnular.fecha)}</p></div>
                 <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Total</p><p className="font-bold text-slate-700">C$ {formatearMonto(obtenerTotalEgreso(modalAnular))}</p></div>
@@ -852,7 +880,7 @@ export default function ModuloGastos({ registrarHistorial, usuarioActual = '' })
 
             <div className="p-4 sm:p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Proveedor</p><p className="font-bold text-slate-700">{modalAbono.egreso.proveedor}</p></div>
+                <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">{esCompra(modalAbono.egreso) ? 'Proveedor' : 'Pagado a'}</p><p className="font-bold text-slate-700">{modalAbono.egreso.proveedor}</p></div>
                 <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Documento</p><p className="font-bold text-slate-700">{etiquetaEgreso(modalAbono.egreso)}</p></div>
                 <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Total</p><p className="font-bold text-slate-700">C$ {formatearMonto(obtenerTotalEgreso(modalAbono.egreso))}</p></div>
                 <div className="bg-slate-50 border rounded-lg p-3"><p className="text-xs font-bold text-slate-500 uppercase">Saldo pendiente</p><p className="font-bold text-red-600">C$ {formatearMonto(obtenerSaldoEgreso(modalAbono.egreso))}</p></div>
